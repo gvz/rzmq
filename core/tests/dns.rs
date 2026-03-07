@@ -1,7 +1,9 @@
 use rzmq::{
+  SocketType, ZmqError,
   socket::{
-    options::{RCVTIMEO, RECONNECT_IVL}, SocketEvent, SNDTIMEO
-  }, SocketType, ZmqError
+    SNDTIMEO, SocketEvent,
+    options::{RCVTIMEO, RECONNECT_IVL},
+  },
 };
 use serial_test::serial;
 use std::time::Duration;

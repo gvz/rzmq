@@ -1,7 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use rzmq::socket::{
-  options::{RCVHWM, SNDHWM, SUBSCRIBE},
   SocketType,
+  options::{RCVHWM, SNDHWM, SUBSCRIBE},
 };
 use rzmq::{Context, Msg, ZmqError};
 use std::env;
@@ -93,7 +93,8 @@ fn external_client_benchmarks(c: &mut Criterion) {
   let selected_socket_type_str = env::var("RZRUST_BENCH_SOCKET_TYPE")
     .unwrap_or_else(|_| "ALL".to_string())
     .to_uppercase();
-  let target_addr = env::var("RZRUST_BENCH_TARGET_ADDR").unwrap_or_else(|_| DEFAULT_TARGET_SERVER_ADDR.to_string());
+  let target_addr =
+    env::var("RZRUST_BENCH_TARGET_ADDR").unwrap_or_else(|_| DEFAULT_TARGET_SERVER_ADDR.to_string());
   let num_ops = env::var("RZRUST_BENCH_NUM_OPS")
     .ok()
     .and_then(|s| s.parse::<usize>().ok())
@@ -115,7 +116,10 @@ fn external_client_benchmarks(c: &mut Criterion) {
       continue; // Skip this socket type's group
     }
 
-    let mut group = c.benchmark_group(format!("{}_Client_vs_External_at_{}", type_name_str, target_addr));
+    let mut group = c.benchmark_group(format!(
+      "{}_Client_vs_External_at_{}",
+      type_name_str, target_addr
+    ));
 
     group
       .warm_up_time(Duration::from_secs(3)) // Adjust as needed
@@ -160,9 +164,17 @@ fn external_client_benchmarks(c: &mut Criterion) {
               .await
               .unwrap();
 
-            match timeout(CLIENT_CONNECT_TIMEOUT, client_socket.connect(&current_iter_target_addr)).await {
+            match timeout(
+              CLIENT_CONNECT_TIMEOUT,
+              client_socket.connect(&current_iter_target_addr),
+            )
+            .await
+            {
               Ok(Ok(())) => {}
-              Ok(Err(e)) => panic!("Client connect to {} failed: {}", current_iter_target_addr, e),
+              Ok(Err(e)) => panic!(
+                "Client connect to {} failed: {}",
+                current_iter_target_addr, e
+              ),
               Err(_) => panic!("Client connect to {} timed out", current_iter_target_addr),
             }
 
@@ -204,11 +216,13 @@ fn external_client_benchmarks(c: &mut Criterion) {
             .await;
             let elapsed = start_time.elapsed();
 
-            client_socket
-              .close()
+            client_socket.close().await.unwrap_or_else(|e| {
+              eprintln!("[Client Bench Warning] Error closing client socket: {}", e)
+            });
+            client_ctx
+              .term()
               .await
-              .unwrap_or_else(|e| eprintln!("[Client Bench Warning] Error closing client socket: {}", e));
-            client_ctx.term().await.expect("Client context termination failed");
+              .expect("Client context termination failed");
 
             elapsed
           }

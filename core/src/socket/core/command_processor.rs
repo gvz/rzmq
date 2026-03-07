@@ -577,7 +577,7 @@ pub(crate) async fn respawn_connecter_actor(
       let core_s_read = core_arc.core_state.read();
       let options_clone = core_s_read.options.clone();
       let monitor_tx_clone = core_s_read.get_monitor_sender_clone();
-      
+
       let current_attempts = core_s_read
         .reconnect_states
         .get(&target_uri)

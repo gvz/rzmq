@@ -47,6 +47,7 @@ Provides a `Context` for managing sockets and a `Socket` handle with async metho
 *   Publish-Subscribe: `PUB`, `SUB`
 *   Pipeline: `PUSH`, `PULL`
 *   Asynchronous Req-Rep: `DEALER`, `ROUTER`
+*   Radio-Dish: `RADIO`, `DISH` (Thread-safe pub-sub alternative with message groups)
 
 ### Multiple Transports
 *   **`tcp`**: Reliable TCP transport for network communication.
@@ -73,7 +74,7 @@ Supports a range of common socket options for fine-tuning behavior, including:
 *   Connection: `RECONNECT_IVL`, `RECONNECT_IVL_MAX`, `HANDSHAKE_IVL`
 *   TCP Keepalives: `TCP_KEEPALIVE`, `TCP_KEEPALIVE_IDLE`, `TCP_KEEPALIVE_CNT`, `TCP_KEEPALIVE_INTVL`
 *   Binding: `LAST_ENDPOINT` (read-only, to get actual bound endpoint, e.g., after binding to port 0)
-*   Pattern-specific: `SUBSCRIBE`, `UNSUBSCRIBE` (for SUB), `ROUTING_ID` (for DEALER/ROUTER identity), `ROUTER_MANDATORY`
+*   Pattern-specific: `SUBSCRIBE`, `UNSUBSCRIBE` (for SUB), `ROUTING_ID` (for DEALER/ROUTER identity), `ROUTER_MANDATORY`, `JOIN`, `LEAVE` (for DISH)
 *   Keepalives: ZMTP heartbeats (`HEARTBEAT_IVL`, `HEARTBEAT_TIMEOUT`)
 *   Security:
     *   `PLAIN_SERVER`, `PLAIN_USERNAME`, `PLAIN_PASSWORD` (requires `plain` feature)

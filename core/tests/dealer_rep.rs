@@ -36,7 +36,10 @@ async fn test_dealer_rep_tcp_basic() -> Result<(), ZmqError> {
 
     // DEALER sends a request
     let request_payload = b"Request from DEALER";
-    println!("[DEALER] Sending request: '{}'", String::from_utf8_lossy(request_payload));
+    println!(
+      "[DEALER] Sending request: '{}'",
+      String::from_utf8_lossy(request_payload)
+    );
     dealer.send(Msg::from_static(request_payload)).await?;
 
     // REP receives the request (should only see the payload)
@@ -47,12 +50,18 @@ async fn test_dealer_rep_tcp_basic() -> Result<(), ZmqError> {
       request_payload,
       "REP socket did not receive the correct payload from DEALER"
     );
-    assert!(!received_req.is_more(), "Payload received by REP should not have MORE flag");
+    assert!(
+      !received_req.is_more(),
+      "Payload received by REP should not have MORE flag"
+    );
     println!("[REP] Received request correctly.");
 
     // REP sends a reply
     let reply_payload = b"Reply from REP";
-    println!("[REP] Sending reply: '{}'", String::from_utf8_lossy(reply_payload));
+    println!(
+      "[REP] Sending reply: '{}'",
+      String::from_utf8_lossy(reply_payload)
+    );
     rep.send(Msg::from_static(reply_payload)).await?;
 
     // DEALER receives the reply (should only see the payload)
@@ -63,10 +72,13 @@ async fn test_dealer_rep_tcp_basic() -> Result<(), ZmqError> {
       reply_payload,
       "DEALER socket did not receive the correct reply payload from REP"
     );
-    assert!(!received_reply.is_more(), "Payload received by DEALER should not have MORE flag");
+    assert!(
+      !received_reply.is_more(),
+      "Payload received by DEALER should not have MORE flag"
+    );
     println!("[DEALER] Received reply correctly.");
   }
-  
+
   println!("[SYS] Terminating context...");
   ctx.term().await?;
   println!("--- Test finished ---");

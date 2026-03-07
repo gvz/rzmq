@@ -6,8 +6,8 @@ use rzmq::{Context, Socket, ZmqError};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Once;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::time::timeout;
@@ -24,7 +24,8 @@ fn setup_tracing() {
     // Default level filter (e.g., info for rzmq, warn for others)
     // Can be overridden by RUST_LOG env variable
     let default_filter = "rzmq=trace,debug,info,warn";
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
+    let env_filter =
+      EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
     let subscriber = FmtSubscriber::builder()
       .with_max_level(tracing::Level::TRACE) // Allow all levels down to TRACE
@@ -35,7 +36,8 @@ fn setup_tracing() {
       .with_test_writer() // Write to test output capture
       .finish();
 
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set global tracing subscriber");
+    tracing::subscriber::set_global_default(subscriber)
+      .expect("Failed to set global tracing subscriber");
 
     println!("Tracing subscriber initialized."); // Optional: confirm init
   });
@@ -74,7 +76,11 @@ pub async fn recv_timeout(socket: &Socket, duration: Duration) -> Result<rzmq::M
 }
 
 // Helper for send with short timeout assertion (e.g., for non-blocking checks)
-pub async fn send_timeout(socket: &Socket, msg: rzmq::Msg, duration: Duration) -> Result<(), ZmqError> {
+pub async fn send_timeout(
+  socket: &Socket,
+  msg: rzmq::Msg,
+  duration: Duration,
+) -> Result<(), ZmqError> {
   match timeout(duration, socket.send(msg)).await {
     Ok(Ok(())) => Ok(()),
     Ok(Err(e)) => Err(e),
@@ -132,7 +138,7 @@ pub async fn wait_for_monitor_event(
         return Err("Monitor channel closed unexpectedly".to_string());
       }
       Err(_elapsed) => { // Timeout for this recv attempt
-         // Continue loop to check overall timeout
+        // Continue loop to check overall timeout
       }
     }
   }

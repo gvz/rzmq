@@ -7,7 +7,9 @@ use crate::socket::connection_iface::ISocketConnection;
 use crate::socket::core::SocketCore;
 use crate::socket::options::{AUTO_DELIMITER, ROUTER_MANDATORY};
 use crate::socket::patterns::incoming_orchestrator::IncomingMessageOrchestrator;
-use crate::socket::patterns::{FramingLatch, RouterMap, WritePipeCoordinator, router_auto_decode, router_auto_encode};
+use crate::socket::patterns::{
+  FramingLatch, RouterMap, WritePipeCoordinator, router_auto_decode, router_auto_encode,
+};
 
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -718,7 +720,6 @@ impl ISocket for RouterSocket {
     self.pipe_send_coordinator.remove_pipe(pipe_read_id).await;
 
     if connection_id_opt.is_some() {
-
       let mut active_frag_guard = self.current_send_target.lock().await;
       if let Some(active_info) = &*active_frag_guard {
         if endpoint_uri_opt.as_deref() == Some(&active_info.target_endpoint_uri) {

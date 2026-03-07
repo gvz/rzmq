@@ -19,7 +19,10 @@ async fn test_tcp_connect_fail_no_listener() -> Result<(), ZmqError> {
   let req = ctx.socket(SocketType::Req)?; // Using REQ as an example client
 
   let unused_endpoint = "tcp://127.0.0.1:5690"; // Port unlikely to be in use
-  println!("REQ connecting to non-existent endpoint {}...", unused_endpoint);
+  println!(
+    "REQ connecting to non-existent endpoint {}...",
+    unused_endpoint
+  );
 
   // Connect call itself should succeed immediately as it's async setup
   req.connect(unused_endpoint).await?;
@@ -127,7 +130,10 @@ async fn test_ipc_bind_fail_directory_exists() -> Result<(), ZmqError> {
   // Binding to a directory usually results in AddrInUse or a specific Io error
   // Let's check for AddrInUse primarily, or a generic IO error.
   assert!(
-    matches!(bind_result, Err(ZmqError::AddrInUse(_)) | Err(ZmqError::IoError { .. })),
+    matches!(
+      bind_result,
+      Err(ZmqError::AddrInUse(_)) | Err(ZmqError::IoError { .. })
+    ),
     "Expected AddrInUse or Io error, got {:?}",
     bind_result
   );
@@ -165,11 +171,17 @@ async fn test_ipc_bind_succeeds_over_existing_file() -> Result<(), ZmqError> {
   println!("Regular file created.");
 
   // Attempt to bind the socket - IpcListener should remove the file first
-  println!("REP attempting to bind to file {} (should succeed)...", endpoint);
+  println!(
+    "REP attempting to bind to file {} (should succeed)...",
+    endpoint
+  );
   let bind_result = rep.bind(&endpoint).await;
   println!("REP bind result: {:?}", bind_result);
 
-  assert!(bind_result.is_ok(), "Expected bind to succeed over existing file");
+  assert!(
+    bind_result.is_ok(),
+    "Expected bind to succeed over existing file"
+  );
   println!("REP correctly bound, overwriting existing file.");
 
   // Verify socket file now exists (optional, but good check)

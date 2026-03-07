@@ -1,4 +1,10 @@
-use crate::{security::{framer::{ISecureFramer, NullFramer}, mechanism::ProcessTokenAction}, Metadata, ZmqError};
+use crate::{
+  Metadata, ZmqError,
+  security::{
+    framer::{ISecureFramer, NullFramer},
+    mechanism::ProcessTokenAction,
+  },
+};
 
 use super::{IDataCipher, Mechanism, MechanismStatus, cipher::PassThroughDataCipher};
 

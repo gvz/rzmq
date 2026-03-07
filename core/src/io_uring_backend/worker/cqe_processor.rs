@@ -4,10 +4,10 @@ use super::internal_op_tracker::{InternalOpDetails, InternalOpPayload, InternalO
 use crate::io_uring_backend::connection_handler::{
   HandlerIoOps, HandlerSqeBlueprint, UringWorkerInterface,
 };
-use crate::io_uring_backend::ops::{UringOpCompletion, UserData, HANDLER_INTERNAL_SEND_OP_UD};
-use crate::io_uring_backend::worker::multishot_reader::IOURING_CQE_F_MORE;
+use crate::io_uring_backend::ops::{HANDLER_INTERNAL_SEND_OP_UD, UringOpCompletion, UserData};
 use crate::io_uring_backend::worker::UringWorker;
-use crate::{uring, Command, ZmqError};
+use crate::io_uring_backend::worker::multishot_reader::IOURING_CQE_F_MORE;
+use crate::{Command, ZmqError, uring};
 
 use io_uring::cqueue::Entry;
 use io_uring::{cqueue, opcode, squeue, types};
@@ -121,9 +121,9 @@ pub(crate) fn process_handler_blueprints(
                 );
               } else {
                 debug!(
-                "CQE Processor: ZC Send - Failed to acquire/prep registered buffer for FD {}. Falling back.",
-                fd_from_handler_iteration
-              );
+                  "CQE Processor: ZC Send - Failed to acquire/prep registered buffer for FD {}. Falling back.",
+                  fd_from_handler_iteration
+                );
               }
             } else {
               debug!(
@@ -167,9 +167,9 @@ pub(crate) fn process_handler_blueprints(
           let bgid = *bgid;
           if fd != fd_from_handler_iteration {
             error!(
-            "CQE Processor: FD mismatch in RequestNewRingReadMultishot! Handler FD {}, Blueprint FD {}. Dropping.",
-            fd_from_handler_iteration, fd
-          );
+              "CQE Processor: FD mismatch in RequestNewRingReadMultishot! Handler FD {}, Blueprint FD {}. Dropping.",
+              fd_from_handler_iteration, fd
+            );
             continue;
           }
           let op_user_data = internal_ops.new_op_id(
@@ -194,16 +194,15 @@ pub(crate) fn process_handler_blueprints(
             } else {
               trace!(
                 "CQE Processor: Queued RecvMulti SQE (ud:{}) for FD {}.",
-                op_user_data,
-                fd
+                op_user_data, fd
               );
               if let Some(handler) = handler_manager.get_mut(fd) {
                 handler.inform_multishot_reader_op_submitted(op_user_data, false, None);
               } else {
                 debug!(
-                "CQE Processor: Handler for FD {} not found after submitting RecvMulti. Reader not informed.",
-                fd
-              );
+                  "CQE Processor: Handler for FD {} not found after submitting RecvMulti. Reader not informed.",
+                  fd
+                );
               }
             }
           }
@@ -217,9 +216,9 @@ pub(crate) fn process_handler_blueprints(
           let target_user_data = *target_user_data;
           if fd != fd_from_handler_iteration {
             error!(
-            "CQE Processor: FD mismatch in RequestNewAsyncCancel! Handler FD {}, Blueprint FD {}. Dropping.",
-            fd_from_handler_iteration, fd
-          );
+              "CQE Processor: FD mismatch in RequestNewAsyncCancel! Handler FD {}, Blueprint FD {}. Dropping.",
+              fd_from_handler_iteration, fd
+            );
             continue;
           }
           let cancel_op_payload = InternalOpPayload::CancelTarget { target_user_data };
@@ -242,9 +241,7 @@ pub(crate) fn process_handler_blueprints(
             } else {
               trace!(
                 "CQE Processor: Queued AsyncCancel SQE (ud:{}, target_ud:{}) for FD {}.",
-                cancel_op_user_data,
-                target_user_data,
-                fd
+                cancel_op_user_data, target_user_data, fd
               );
               if let Some(handler) = handler_manager.get_mut(fd) {
                 handler.inform_multishot_reader_op_submitted(
@@ -254,9 +251,9 @@ pub(crate) fn process_handler_blueprints(
                 );
               } else {
                 debug!(
-                "CQE Processor: Handler for FD {} not found after submitting AsyncCancel. Reader not informed.",
-                fd
-              );
+                  "CQE Processor: Handler for FD {} not found after submitting AsyncCancel. Reader not informed.",
+                  fd
+                );
               }
             }
           }
@@ -276,16 +273,17 @@ pub(crate) fn process_handler_blueprints(
             let push_result = sq.push(&entry_to_submit);
 
             if push_result.is_err() {
-              debug!("CQE Processor: SQ push failed for FD {} blueprint {:?} (race condition). Re-queueing work.", fd_from_handler_iteration, entry_to_submit);
+              debug!(
+                "CQE Processor: SQ push failed for FD {} blueprint {:?} (race condition). Re-queueing work.",
+                fd_from_handler_iteration, entry_to_submit
+              );
               let _dropped_details = internal_ops.take_op_details(user_data); // Clean up tracker
               let remaining = blueprints.split_off(idx);
               return Err(remaining);
             } else {
               trace!(
                 "CQE Processor: Queued SQE (ud:{}) for FD {} from blueprint: {:?}",
-                user_data,
-                fd_from_handler_iteration,
-                entry_to_submit
+                user_data, fd_from_handler_iteration, entry_to_submit
               );
             }
           }
@@ -324,9 +322,7 @@ pub(crate) fn process_all_cqes(
 
     trace!(
       "[CQE Proc] CQE: ud={}, res={}, flags={:x}",
-      cqe_user_data,
-      cqe_result,
-      cqe_flags
+      cqe_user_data, cqe_result, cqe_flags
     );
 
     if worker.event_fd_poller.handle_cqe_if_matches(
@@ -351,9 +347,7 @@ pub(crate) fn process_all_cqes(
     if let Some(mut ext_op_ctx) = worker.external_op_tracker.take_op(cqe_user_data) {
       trace!(
         "[CQE Proc] EXTERNAL op '{}' (ud:{}, res:{})",
-        ext_op_ctx.op_name,
-        cqe_user_data,
-        cqe_result
+        ext_op_ctx.op_name, cqe_user_data, cqe_result
       );
       let completion_to_send: UringOpCompletion = if cqe_result < 0 {
         let zmq_err = ZmqError::from(std::io::Error::from_raw_os_error(-cqe_result));
@@ -402,7 +396,10 @@ pub(crate) fn process_all_cqes(
                 cqe_user_data,
               ) {
                 Ok(initial_ops) => {
-                  info!("CQE Processor: Connect successful (ext_ud:{}), new FD:{}. Handler created. Peer: {}, Local: {}", cqe_user_data, connected_fd, peer_addr, local_addr);
+                  info!(
+                    "CQE Processor: Connect successful (ext_ud:{}), new FD:{}. Handler created. Peer: {}, Local: {}",
+                    cqe_user_data, connected_fd, peer_addr, local_addr
+                  );
                   if !initial_ops.sqe_blueprints.is_empty() {
                     new_work_generated.push((connected_fd, initial_ops.sqe_blueprints));
                   }
@@ -419,7 +416,10 @@ pub(crate) fn process_all_cqes(
                   }
                 }
                 Err(err_msg) => {
-                  error!("CQE Processor: Connect successful (ext_ud:{}), FD:{}, but handler creation failed: {}", cqe_user_data, connected_fd, err_msg);
+                  error!(
+                    "CQE Processor: Connect successful (ext_ud:{}), FD:{}, but handler creation failed: {}",
+                    cqe_user_data, connected_fd, err_msg
+                  );
                   unsafe {
                     libc::close(connected_fd);
                   }
@@ -518,14 +518,20 @@ pub(crate) fn process_all_cqes(
                     .take_op_details(cqe_user_data)
                     .is_none()
                   {
-                    warn!("[CQE Proc] Multishot delegate requested cleanup for ud:{}, but it was already taken.", cqe_user_data);
+                    warn!(
+                      "[CQE Proc] Multishot delegate requested cleanup for ud:{}, but it was already taken.",
+                      cqe_user_data
+                    );
                   }
                 } else if op_type_peeked == InternalOpType::RingReadMultishot {
                   is_multishot_read_pending_more = true;
                 }
               }
               Err(e) => {
-                error!("[CQE Proc] Multishot delegate for FD {} (ud:{}) returned error: {}. Closing handler.", handler_fd_peeked, cqe_user_data, e);
+                error!(
+                  "[CQE Proc] Multishot delegate for FD {} (ud:{}) returned error: {}. Closing handler.",
+                  handler_fd_peeked, cqe_user_data, e
+                );
                 worker
                   .fds_needing_close_initiated_pass
                   .push_back(handler_fd_peeked);
@@ -550,10 +556,7 @@ pub(crate) fn process_all_cqes(
       let op_type = op_details.op_type;
       trace!(
         "[CQE Proc] INTERNAL op (ud:{}, type:{:?}, fd:{}, res:{}) - Final Processing",
-        cqe_user_data,
-        op_type,
-        handler_fd,
-        cqe_result
+        cqe_user_data, op_type, handler_fd, cqe_result
       );
 
       match op_type {

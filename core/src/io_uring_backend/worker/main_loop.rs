@@ -1,13 +1,13 @@
 #![cfg(feature = "io-uring")]
 
-use super::{cqe_processor, ExternalOpContext, UringWorker};
+use super::{ExternalOpContext, UringWorker, cqe_processor};
+use crate::ZmqError;
 use crate::io_uring_backend::buffer_manager::BufferRingManager;
 use crate::io_uring_backend::connection_handler::UringWorkerInterface;
 use crate::io_uring_backend::ops::{UringOpCompletion, UringOpRequest};
 use crate::io_uring_backend::worker::{InternalOpPayload, InternalOpType, WorkerState};
 use crate::profiler::LoopProfiler;
 use crate::transport::endpoint::parse_endpoint;
-use crate::ZmqError;
 
 use std::collections::VecDeque;
 use std::mem;
@@ -67,8 +67,7 @@ impl UringWorker {
 
     trace!(
       "UringWorker: Handling external op request: {}, ud: {}",
-      op_name_str,
-      user_data
+      op_name_str, user_data
     );
 
     match request {
@@ -80,7 +79,10 @@ impl UringWorker {
         reply_tx,
       } => {
         if self.buffer_manager.is_some() {
-          warn!("UringWorker: BufferRingManager already initialized. Ignoring InitializeBufferRing (ud: {})", user_data);
+          warn!(
+            "UringWorker: BufferRingManager already initialized. Ignoring InitializeBufferRing (ud: {})",
+            user_data
+          );
           let _ = reply_tx.send(Ok(UringOpCompletion::OpError {
             user_data,
             op_name: op_name_str,
@@ -89,7 +91,10 @@ impl UringWorker {
         } else {
           match BufferRingManager::new(&self.ring, num_buffers, bgid, buffer_capacity) {
             Ok(bm) => {
-              info!("UringWorker: BufferRingManager initialized with bgid: {}, {} buffers of {} capacity.", bgid, num_buffers, buffer_capacity);
+              info!(
+                "UringWorker: BufferRingManager initialized with bgid: {}, {} buffers of {} capacity.",
+                bgid, num_buffers, buffer_capacity
+              );
               self.buffer_manager = Some(bm);
               if self.default_buffer_ring_group_id_val.is_none() {
                 self.default_buffer_ring_group_id_val = Some(bgid);
@@ -579,13 +584,15 @@ pub(crate) fn run_worker_loop(worker: &mut UringWorker) -> Result<(), ZmqError> 
               } else {
                 trace!(
                   "UringWorker: Queued new standard read for FD {}. UD: {}",
-                  fd,
-                  user_data
+                  fd, user_data
                 );
               }
             }
           } else {
-            error!("UringWorker: Cannot submit read for FD {} because no default buffer ring is configured.", fd);
+            error!(
+              "UringWorker: Cannot submit read for FD {} because no default buffer ring is configured.",
+              fd
+            );
           }
         }
         drop(sq);

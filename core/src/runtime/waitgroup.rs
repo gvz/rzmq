@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Notify;
 
 /// An asynchronous WaitGroup, similar to Go's `sync.WaitGroup`.
@@ -41,7 +41,11 @@ impl WaitGroup {
     // No specific action needed here regarding the Notify state reset.
     if old_count == 0 {
       // Optional: log when transitioning from zero
-      tracing::trace!(delta, new_count = delta, "WaitGroup count increased from zero");
+      tracing::trace!(
+        delta,
+        new_count = delta,
+        "WaitGroup count increased from zero"
+      );
     }
   }
 
@@ -150,7 +154,9 @@ mod tests {
 
     // Ensure wait_task is still blocked
     assert!(
-      timeout(Duration::from_millis(5), &mut wait_task).await.is_err(),
+      timeout(Duration::from_millis(5), &mut wait_task)
+        .await
+        .is_err(),
       "Wait task should not have finished yet"
     );
 
@@ -166,7 +172,10 @@ mod tests {
     assert_eq!(task1_res, "Task 1 Done");
     assert_eq!(task2_res, "Task 2 Done");
     assert_eq!(wg.get_count(), 0);
-    assert!(wait_res.is_ok(), "Wait task should finish after task 2 completes");
+    assert!(
+      wait_res.is_ok(),
+      "Wait task should finish after task 2 completes"
+    );
     assert_eq!(wait_res.unwrap().unwrap(), "Wait Finished");
   }
 
@@ -198,7 +207,9 @@ mod tests {
     assert_eq!(wg.get_count(), 1);
     // Wait should still be blocked
     assert!(
-      timeout(Duration::from_millis(10), &mut wait_task).await.is_err(),
+      timeout(Duration::from_millis(10), &mut wait_task)
+        .await
+        .is_err(),
       "Wait task should still be blocked after one done()"
     );
 

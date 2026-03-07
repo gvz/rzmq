@@ -4,9 +4,9 @@ use crate::context::Context;
 use crate::error::ZmqError;
 use crate::message::Msg;
 use crate::runtime::SystemEvent;
+use crate::socket::SocketEvent;
 use crate::socket::core::pipe_manager::run_pipe_reader_task;
 use crate::socket::core::{EndpointInfo, EndpointType, SocketCore};
-use crate::socket::SocketEvent;
 
 use fibre::mpmc::bounded_async;
 use fibre::oneshot;

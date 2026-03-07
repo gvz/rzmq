@@ -1,6 +1,6 @@
 mod common;
 
-use rzmq::{socket::SocketEvent, Context, Msg, SocketType, ZmqError};
+use rzmq::{Context, Msg, SocketType, ZmqError, socket::SocketEvent};
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -23,7 +23,9 @@ async fn run_rep_server(ctx: Context) -> Result<(), ZmqError> {
     sleep(Duration::from_millis(100)).await; // Simulate work
 
     let reply_str = format!("World_{}", i);
-    rep_socket.send(Msg::from_vec(reply_str.as_bytes().to_vec())).await?;
+    rep_socket
+      .send(Msg::from_vec(reply_str.as_bytes().to_vec()))
+      .await?;
     println!("[REP] Sent reply: '{}'", reply_str);
   }
 
@@ -38,14 +40,20 @@ async fn run_req_client(ctx: Context) -> Result<(), ZmqError> {
   let req_socket_monitor = req_socket.monitor_default().await?;
   req_socket.connect(REP_ADDR).await?;
 
-  wait_for_event(&req_socket_monitor, Duration::from_secs(10), |event| matches!(event, SocketEvent::HandshakeSucceeded { .. })).await.map_err(|msg| ZmqError::Internal(msg.to_string()))?;
+  wait_for_event(&req_socket_monitor, Duration::from_secs(10), |event| {
+    matches!(event, SocketEvent::HandshakeSucceeded { .. })
+  })
+  .await
+  .map_err(|msg| ZmqError::Internal(msg.to_string()))?;
 
   println!("[REQ] Connected.");
 
   for i in 0..NUM_REQUESTS {
     let request_str = format!("Hello_{}", i);
     println!("[REQ] Sending request ({}): '{}'", i, request_str);
-    req_socket.send(Msg::from_vec(request_str.into_bytes())).await?;
+    req_socket
+      .send(Msg::from_vec(request_str.into_bytes()))
+      .await?;
 
     let reply_msg = req_socket.recv().await?;
     let reply_str = String::from_utf8_lossy(reply_msg.data().unwrap_or_default());
@@ -98,7 +106,12 @@ async fn main() -> Result<(), ZmqError> {
   });
 
   // Wait for tasks to complete
-  let _ = tokio::try_join!(server_handle, client_handle_1, client_handle_2, client_handle_3);
+  let _ = tokio::try_join!(
+    server_handle,
+    client_handle_1,
+    client_handle_2,
+    client_handle_3
+  );
 
   println!("[Main] Terminating context...");
   ctx.term().await?;

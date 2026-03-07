@@ -33,7 +33,10 @@ async fn test_dealer_dealer_tcp_bidirectional() -> Result<(), ZmqError> {
 
     // --- Communication from A to B ---
     let msg_a_to_b = b"Message from A to B";
-    println!("[DEALER A] Sending: '{}'", String::from_utf8_lossy(msg_a_to_b));
+    println!(
+      "[DEALER A] Sending: '{}'",
+      String::from_utf8_lossy(msg_a_to_b)
+    );
     dealer_a.send(Msg::from_static(msg_a_to_b)).await?;
 
     println!("[DEALER B] Receiving...");
@@ -47,7 +50,10 @@ async fn test_dealer_dealer_tcp_bidirectional() -> Result<(), ZmqError> {
 
     // --- Communication from B to A ---
     let msg_b_to_a = b"Message from B to A";
-    println!("[DEALER B] Sending: '{}'", String::from_utf8_lossy(msg_b_to_a));
+    println!(
+      "[DEALER B] Sending: '{}'",
+      String::from_utf8_lossy(msg_b_to_a)
+    );
     dealer_b.send(Msg::from_static(msg_b_to_a)).await?;
 
     println!("[DEALER A] Receiving...");
@@ -59,7 +65,7 @@ async fn test_dealer_dealer_tcp_bidirectional() -> Result<(), ZmqError> {
     );
     println!("[DEALER A] Received correctly.");
   }
-  
+
   println!("[SYS] Terminating context...");
   ctx.term().await?;
   println!("--- Test finished ---");

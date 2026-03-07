@@ -4,6 +4,8 @@ mod data_io;
 mod handshake;
 mod heartbeat;
 
+pub(crate) use heartbeat::DataCommandResult;
+
 use crate::error::ZmqError;
 use crate::message::Msg;
 use crate::protocol::zmtp::greeting::ZmtpGreeting;
@@ -168,11 +170,12 @@ impl<S: ZmtpStdStream> ZmtpProtocolHandlerX<S> {
   /// Processes an incoming ZMTP command frame received during the data phase,
   /// primarily for handling PING/PONG.
   ///
-  /// Returns `Ok(Some(Msg))` if a PONG reply needs to be sent.
+  /// Returns `DataCommandResult` indicating whether to send a reply, handle internally,
+  /// or forward to the socket pattern logic.
   pub(crate) fn process_incoming_data_command_frame(
     &mut self,
     cmd_msg: &Msg,
-  ) -> Result<Option<Msg>, ZmqError> {
+  ) -> Result<heartbeat::DataCommandResult, ZmqError> {
     heartbeat::process_heartbeat_command_impl(self, cmd_msg)
   }
 
@@ -238,7 +241,7 @@ impl<S: ZmtpStdStream> ZmtpProtocolHandlerX<S> {
     if self.security_mechanism.name() != NullMechanism::NAME {
       self.security_mechanism = Box::new(NullMechanism);
     }
-    
+
     // Reset framer to free any internal state
     self.framer = Box::new(NullFramer::new());
   }

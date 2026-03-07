@@ -5,8 +5,8 @@ use crate::socket::{Socket, SocketType};
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::time::Duration;
 
 use tracing::warn;
@@ -367,7 +367,7 @@ impl Context {
     // This is the crucial part to ensure termination completes even if the
     // event listener is gone or event publishing fails.
     let wg = &self.inner.actor_wait_group; // Borrow the WaitGroup
-                                           // Ensure count doesn't go below zero before decrementing.
+    // Ensure count doesn't go below zero before decrementing.
     if wg.get_count() > 0 {
       tracing::trace!(
         actor_handle = handle_id,

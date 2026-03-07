@@ -1,6 +1,11 @@
 #![cfg(feature = "noise_xx")]
 
 use rzmq::{
+  Context,
+  Msg,
+  SocketType,
+  ZmqError,
+  socket::SocketEvent, // For monitor events if we add them later
   socket::options::{
     NOISE_XX_ENABLED,
     NOISE_XX_REMOTE_STATIC_PUBLIC_KEY,
@@ -10,17 +15,12 @@ use rzmq::{
     SNDHWM,
     SNDTIMEO, // Added SNDTIMEO for PUSH consistency
   },
-  socket::SocketEvent, // For monitor events if we add them later
-  Context,
-  Msg,
-  SocketType,
-  ZmqError,
 };
 use serial_test::serial;
 use std::time::Duration; // To run tests serially as they might use fixed ports
 
 // For key generation
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 use x25519_dalek::{PublicKey, StaticSecret}; // Cryptographically secure random number generator
 
 mod common; // Include your test helpers
@@ -66,10 +66,15 @@ async fn test_noise_xx_push_pull_basic_encrypted_exchange() -> Result<(), ZmqErr
   pull_server
     .set_option_raw(NOISE_XX_STATIC_SECRET_KEY, &server_keys.sk)
     .await?;
-  pull_server.set_option_raw(RCVHWM, &(10i32).to_ne_bytes()).await?;
+  pull_server
+    .set_option_raw(RCVHWM, &(10i32).to_ne_bytes())
+    .await?;
   println!("[PULL Server {}] Binding...", endpoint);
   pull_server.bind(endpoint).await?;
-  println!("[PULL Server {}] Bound and listening with Noise_XX.", endpoint);
+  println!(
+    "[PULL Server {}] Bound and listening with Noise_XX.",
+    endpoint
+  );
   // Optional: let mut server_monitor = pull_server.monitor_default().await?;
 
   // --- PUSH Client Setup ---
@@ -84,9 +89,14 @@ async fn test_noise_xx_push_pull_basic_encrypted_exchange() -> Result<(), ZmqErr
   push_client
     .set_option_raw(NOISE_XX_REMOTE_STATIC_PUBLIC_KEY, &server_keys.pk)
     .await?;
-  push_client.set_option_raw(SNDHWM, &(10i32).to_ne_bytes()).await?;
   push_client
-    .set_option_raw(SNDTIMEO, &(connect_timeout.as_millis() as i32).to_ne_bytes())
+    .set_option_raw(SNDHWM, &(10i32).to_ne_bytes())
+    .await?;
+  push_client
+    .set_option_raw(
+      SNDTIMEO,
+      &(connect_timeout.as_millis() as i32).to_ne_bytes(),
+    )
     .await?;
 
   let mut client_monitor = push_client.monitor_default().await?;
@@ -102,13 +112,21 @@ async fn test_noise_xx_push_pull_basic_encrypted_exchange() -> Result<(), ZmqErr
   // Wait for HandshakeSucceeded event from the client's monitor
   let mut handshake_succeeded = false;
   loop {
-    match tokio::time::timeout(connect_timeout + Duration::from_secs(1), client_monitor.recv()).await {
+    match tokio::time::timeout(
+      connect_timeout + Duration::from_secs(1),
+      client_monitor.recv(),
+    )
+    .await
+    {
       Ok(Ok(event)) => {
         println!("[PUSH Client {}] Monitor Event: {:?}", endpoint, event);
         if let SocketEvent::HandshakeSucceeded { endpoint: ep } = event {
           if ep == endpoint || ep.contains(endpoint) {
             // Check primary or resolved endpoint
-            println!("[PUSH Client {}] Handshake Succeeded event received!", endpoint);
+            println!(
+              "[PUSH Client {}] Handshake Succeeded event received!",
+              endpoint
+            );
             handshake_succeeded = true;
             break;
           }
@@ -138,7 +156,10 @@ async fn test_noise_xx_push_pull_basic_encrypted_exchange() -> Result<(), ZmqErr
       }
       Ok(Err(_recv_err)) => {
         // Monitor channel closed
-        panic!("[PUSH Client {}] Monitor channel closed unexpectedly.", endpoint);
+        panic!(
+          "[PUSH Client {}] Monitor channel closed unexpectedly.",
+          endpoint
+        );
       }
       Err(_timeout_elapsed) => {
         panic!(
@@ -148,7 +169,10 @@ async fn test_noise_xx_push_pull_basic_encrypted_exchange() -> Result<(), ZmqErr
       }
     }
   }
-  assert!(handshake_succeeded, "Client must receive HandshakeSucceeded event.");
+  assert!(
+    handshake_succeeded,
+    "Client must receive HandshakeSucceeded event."
+  );
   println!(
     "[SYSTEM {}] Client handshake confirmed successful via monitor.",
     endpoint
@@ -162,7 +186,12 @@ async fn test_noise_xx_push_pull_basic_encrypted_exchange() -> Result<(), ZmqErr
     String::from_utf8_lossy(message_data)
   );
 
-  match tokio::time::timeout(SHORT_TIMEOUT, push_client.send(Msg::from_static(message_data))).await {
+  match tokio::time::timeout(
+    SHORT_TIMEOUT,
+    push_client.send(Msg::from_static(message_data)),
+  )
+  .await
+  {
     Ok(Ok(())) => println!("[PUSH Client {}] Send successful.", endpoint),
     Ok(Err(e)) => {
       println!("[PUSH Client {}] Send failed: {}", endpoint, e);
@@ -174,7 +203,10 @@ async fn test_noise_xx_push_pull_basic_encrypted_exchange() -> Result<(), ZmqErr
     }
   }
 
-  println!("[PULL Server {}] Attempting to receive message...", endpoint);
+  println!(
+    "[PULL Server {}] Attempting to receive message...",
+    endpoint
+  );
   let received_msg = common::recv_timeout(&pull_server, LONG_TIMEOUT).await?;
 
   println!(
@@ -222,7 +254,10 @@ async fn test_noise_xx_client_auth_server_pk_mismatch() -> Result<(), ZmqError> 
     .await?;
   // Server doesn't need to know client's PK beforehand for XX responder
   pull_server.bind(endpoint).await?;
-  println!("[PULL Server {}] Bound with genuine PK: {:?}", endpoint, server_keys.pk);
+  println!(
+    "[PULL Server {}] Bound with genuine PK: {:?}",
+    endpoint, server_keys.pk
+  );
 
   // --- PUSH Client Setup (Expects FAKE Server PK) ---
   let push_client = ctx.socket(SocketType::Push)?;
@@ -269,7 +304,10 @@ async fn test_noise_xx_client_auth_server_pk_mismatch() -> Result<(), ZmqError> 
           } => {
             if ep == endpoint || ep.contains(endpoint) {
               // Check primary endpoint or resolved one
-              println!("[PUSH Client {}] Received HandshakeFailed: {}", endpoint, error_msg);
+              println!(
+                "[PUSH Client {}] Received HandshakeFailed: {}",
+                endpoint, error_msg
+              );
               assert!(
                 error_msg.contains("Noise decrypt/authentication failed")
                   || error_msg.contains("Server public key mismatch")
@@ -288,7 +326,10 @@ async fn test_noise_xx_client_auth_server_pk_mismatch() -> Result<(), ZmqError> 
           } => {
             // This can also be a valid outcome if the security failure is reported as a general connect fail
             if ep == endpoint || ep.contains(endpoint) {
-              println!("[PUSH Client {}] Received ConnectFailed: {}", endpoint, error_msg);
+              println!(
+                "[PUSH Client {}] Received ConnectFailed: {}",
+                endpoint, error_msg
+              );
               assert!(
                 error_msg.contains("Security error") || error_msg.contains("Noise"),
                 "Error message content mismatch: {}",
@@ -320,7 +361,10 @@ async fn test_noise_xx_client_auth_server_pk_mismatch() -> Result<(), ZmqError> 
             );
           }
           _ => {
-            println!("[PUSH Client {}] Monitor: Ignoring event: {:?}", endpoint, event);
+            println!(
+              "[PUSH Client {}] Monitor: Ignoring event: {:?}",
+              endpoint, event
+            );
           }
         }
       }
@@ -333,13 +377,19 @@ async fn test_noise_xx_client_auth_server_pk_mismatch() -> Result<(), ZmqError> 
       }
       Err(_timeout_elapsed) => {
         // Timeout waiting for a relevant event
-        panic!("[PUSH Client {}] Timed out waiting for a HandshakeFailed, ConnectFailed, or Disconnected event. No failure observed.", endpoint);
+        panic!(
+          "[PUSH Client {}] Timed out waiting for a HandshakeFailed, ConnectFailed, or Disconnected event. No failure observed.",
+          endpoint
+        );
       }
     }
   }
 
-  assert!(expected_failure_event_received,
-          "Client should have emitted a HandshakeFailed, ConnectFailed (with security error), or Disconnected event due to PK mismatch. Last error: '{}'", received_error_message);
+  assert!(
+    expected_failure_event_received,
+    "Client should have emitted a HandshakeFailed, ConnectFailed (with security error), or Disconnected event due to PK mismatch. Last error: '{}'",
+    received_error_message
+  );
   println!(
     "[PUSH Client {}] Correctly observed connection/handshake failure via monitor: {}",
     endpoint, received_error_message
@@ -354,7 +404,10 @@ async fn test_noise_xx_client_auth_server_pk_mismatch() -> Result<(), ZmqError> 
     "Server should not receive any message after client's failed handshake, got {:?}",
     recv_result_server
   );
-  println!("[PULL Server {}] Correctly received no message from client.", endpoint);
+  println!(
+    "[PULL Server {}] Correctly received no message from client.",
+    endpoint
+  );
 
   // Teardown
   println!("[SYSTEM {}] Closing client and server sockets...", endpoint);

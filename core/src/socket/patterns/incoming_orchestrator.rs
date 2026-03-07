@@ -1,8 +1,8 @@
+#[allow(unused_imports)]
+use crate::Blob;
 use crate::error::ZmqError;
 use crate::message::{Msg, MsgFlags};
 use crate::socket::patterns::fair_queue::{FairQueue, PushError};
-#[allow(unused_imports)]
-use crate::Blob;
 use dashmap::DashMap;
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -30,7 +30,11 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
     }
   }
 
-  pub fn accumulate_pipe_frame(&self, pipe_read_id: usize, incoming_frame: Msg) -> Result<Option<Vec<Msg>>, ZmqError> {
+  pub fn accumulate_pipe_frame(
+    &self,
+    pipe_read_id: usize,
+    incoming_frame: Msg,
+  ) -> Result<Option<Vec<Msg>>, ZmqError> {
     let is_last_frame_of_zmtp_message = !incoming_frame.is_more();
     if is_last_frame_of_zmtp_message {
       let mut assembled_message = self
@@ -47,53 +51,64 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
       }
       Ok(Some(assembled_message))
     } else {
-      let mut pipe_buffer_entry = self.partial_pipe_messages.entry(pipe_read_id).or_insert_with(Vec::new);
+      let mut pipe_buffer_entry = self
+        .partial_pipe_messages
+        .entry(pipe_read_id)
+        .or_insert_with(Vec::new);
       pipe_buffer_entry.value_mut().push(incoming_frame);
       Ok(None)
     }
   }
 
-  pub async fn queue_item(&self, pipe_read_id_for_logging: usize, item_to_queue: QItem) -> Result<(), ZmqError> {
+  pub async fn queue_item(
+    &self,
+    pipe_read_id_for_logging: usize,
+    item_to_queue: QItem,
+  ) -> Result<(), ZmqError> {
     let push_result = match self.queue_push_timeout {
       None => self.main_incoming_queue.push_item(item_to_queue).await,
-      Some(duration) if duration.is_zero() => match self.main_incoming_queue.try_push_item(item_to_queue) {
-        Ok(()) => Ok(()),
-        Err(PushError::Full(_returned_item)) => {
-          tracing::warn!(
-            handle = self.socket_core_handle,
-            pipe_id = pipe_read_id_for_logging,
-            "Orchestrator try_push item to main queue failed: Full. Item dropped."
-          );
-          Ok(())
+      Some(duration) if duration.is_zero() => {
+        match self.main_incoming_queue.try_push_item(item_to_queue) {
+          Ok(()) => Ok(()),
+          Err(PushError::Full(_returned_item)) => {
+            tracing::warn!(
+              handle = self.socket_core_handle,
+              pipe_id = pipe_read_id_for_logging,
+              "Orchestrator try_push item to main queue failed: Full. Item dropped."
+            );
+            Ok(())
+          }
+          Err(PushError::Closed(_returned_item)) => {
+            tracing::error!(
+              handle = self.socket_core_handle,
+              pipe_id = pipe_read_id_for_logging,
+              "Orchestrator try_push item to main queue failed: Closed."
+            );
+            Err(ZmqError::Internal("Main incoming queue closed".into()))
+          }
         }
-        Err(PushError::Closed(_returned_item)) => {
-          tracing::error!(
-            handle = self.socket_core_handle,
-            pipe_id = pipe_read_id_for_logging,
-            "Orchestrator try_push item to main queue failed: Closed."
-          );
-          Err(ZmqError::Internal("Main incoming queue closed".into()))
+      }
+      Some(duration) => {
+        match tokio_timeout(duration, self.main_incoming_queue.push_item(item_to_queue)).await {
+          Ok(Ok(())) => Ok(()),
+          Ok(Err(e)) => Err(e),
+          Err(_timeout_elapsed) => {
+            tracing::warn!(
+              handle = self.socket_core_handle,
+              pipe_id = pipe_read_id_for_logging,
+              "Orchestrator timed push of item to main queue failed: Timeout. Item dropped."
+            );
+            Ok(())
+          }
         }
-      },
-      Some(duration) => match tokio_timeout(duration, self.main_incoming_queue.push_item(item_to_queue)).await {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => Err(e),
-        Err(_timeout_elapsed) => {
-          tracing::warn!(
-            handle = self.socket_core_handle,
-            pipe_id = pipe_read_id_for_logging,
-            "Orchestrator timed push of item to main queue failed: Timeout. Item dropped."
-          );
-          Ok(())
-        }
-      },
+      }
     };
 
     match push_result {
       Ok(()) => Ok(()),
-      Err(ZmqError::Internal(ref msg)) if msg.contains("FairQueue channel closed") => Err(ZmqError::Internal(
-        "Main incoming queue channel unexpectedly closed".into(),
-      )),
+      Err(ZmqError::Internal(ref msg)) if msg.contains("FairQueue channel closed") => Err(
+        ZmqError::Internal("Main incoming queue channel unexpectedly closed".into()),
+      ),
       Err(e) => {
         tracing::error!(handle = self.socket_core_handle, pipe_id = pipe_read_id_for_logging, error = %e, "Orchestrator: Unexpected error pushing item.");
         Err(e)
@@ -102,7 +117,10 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
   }
 
   /// Helper to pop a QItem from the main FairQueue with timeout logic.
-  pub(crate) async fn recv_item_from_main_queue(&self, rcvtimeo_opt: Option<Duration>) -> Result<QItem, ZmqError> {
+  pub(crate) async fn recv_item_from_main_queue(
+    &self,
+    rcvtimeo_opt: Option<Duration>,
+  ) -> Result<QItem, ZmqError> {
     let pop_future = self.main_incoming_queue.pop_item();
     match rcvtimeo_opt {
       Some(duration) if !duration.is_zero() => match tokio_timeout(duration, pop_future).await {
@@ -241,7 +259,6 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
   }
 
   pub async fn close(&self) {
-    
     self.main_incoming_queue.close();
     // Also clear the partial message buffers
     self.partial_pipe_messages.clear();

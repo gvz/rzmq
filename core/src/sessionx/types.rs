@@ -1,7 +1,7 @@
 #![allow(dead_code)] // Allow dead code for now as we build incrementally
 
-use crate::error::ZmqError;
 use crate::Blob;
+use crate::error::ZmqError;
 
 /// Phases for the SessionConnectionActorX lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

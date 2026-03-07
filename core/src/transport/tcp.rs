@@ -345,7 +345,7 @@ impl TcpListener {
             let socket_logic = socket_logic.clone();
 
             async move {
-              let max_connection_permit = _permit_guard; 
+              let max_connection_permit = _permit_guard;
 
               let mut connection_iface_for_event: Option<Arc<dyn ISocketConnection>> = None;
               let mut interaction_model_for_event: Option<ConnectionInteractionModel> = None;

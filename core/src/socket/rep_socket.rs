@@ -2,10 +2,10 @@ use crate::delegate_to_core;
 use crate::error::ZmqError;
 use crate::message::{Blob, Msg, MsgFlags};
 use crate::runtime::{Command, MailboxSender};
+use crate::socket::ISocket;
 use crate::socket::connection_iface::ISocketConnection;
 use crate::socket::core::{CoreState, SocketCore};
 use crate::socket::patterns::IncomingMessageOrchestrator;
-use crate::socket::ISocket;
 
 use async_trait::async_trait;
 use parking_lot::{Mutex as ParkingLotMutex, RwLock, RwLockReadGuard};
@@ -232,14 +232,13 @@ impl ISocket for RepSocket {
   }
 
   async fn process_command(&self, command: Command) -> Result<bool, ZmqError> {
-
     match command {
       Command::Stop => {
         self.incoming_orchestrator.close().await;
       }
       _ => return Ok(false),
     }
-    
+
     Ok(true)
   }
 
@@ -331,7 +330,13 @@ impl ISocket for RepSocket {
   }
 
   async fn update_peer_identity(&self, pipe_read_id: usize, identity: Option<Blob>) {
-    tracing::trace!(handle = self.core.handle, socket_type = "REP", pipe_read_id, ?identity, "update_peer_identity called, but REP socket does not use peer identities beyond routing. Ignoring for main state.");
+    tracing::trace!(
+      handle = self.core.handle,
+      socket_type = "REP",
+      pipe_read_id,
+      ?identity,
+      "update_peer_identity called, but REP socket does not use peer identities beyond routing. Ignoring for main state."
+    );
   }
 
   async fn pipe_detached(&self, pipe_read_id: usize) {

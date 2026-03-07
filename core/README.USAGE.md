@@ -399,6 +399,113 @@ It is important to ensure that `Socket` handles are dropped or explicitly closed
 *   **`Req` (Request) / `Rep` (Reply)**: For synchronous request-response communication.
 *   **`Push` / `Pull`**: For distributing messages in a pipeline or work queue.
 *   **`Dealer` / `Router`**: For advanced, asynchronous request-response and message routing.
+*   **`Radio` / `Dish`**: For thread-safe group-based message distribution. See the [Radio-Dish Pattern](#radio-dish-pattern) section for details.
+
+## Radio-Dish Pattern
+
+The Radio-Dish pattern is a thread-safe alternative to the Pub-Sub pattern. It provides one-way message distribution from Radio sockets (publishers) to Dish sockets (subscribers), with support for message groups.
+
+### Key Differences from Pub-Sub
+
+| Feature | Radio-Dish | Pub-Sub |
+|---------|------------|---------|
+| Thread Safety | Fully thread-safe | Not thread-safe |
+| Message Groups | Native support via `group` | Simulated via topic prefixes |
+| Multipart Messages | Not allowed (atomic) | Supported |
+| Filtering | Done on sender side | Done on subscriber side |
+
+### Socket Types
+
+*   **`Radio`**: The publisher socket. Sends messages to all connected Dishes. Each message must have a group assigned.
+*   **`Dish`**: The subscriber socket. Receives messages from connected Radios. Subscribes to specific groups using the `JOIN` option.
+
+### Socket Options for Radio-Dish
+
+*   **`JOIN`**: Join a message group (DISH socket). The group must be 1-255 bytes and cannot contain null bytes.
+*   **`LEAVE`**: Leave a message group (DISH socket).
+
+### Group
+
+Messages sent from a Radio socket must have a group assigned using `Msg::set_group()`. The group:
+- Must be 0-255 bytes in length
+- Cannot contain null bytes (`\0`)
+- Is used for filtering messages on the Radio side
+
+### Example: Basic Radio-Dish Communication
+
+```rust
+use rzmq::{Context, SocketType, Msg, ZmqError};
+use rzmq::socket::options::{JOIN, LEAVE};
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() -> Result<(), ZmqError> {
+    let ctx = Context::new()?;
+
+    // Create Radio (publisher) and Dish (subscriber) sockets
+    let radio = ctx.socket(SocketType::Radio)?;
+    let dish = ctx.socket(SocketType::Dish)?;
+
+    let endpoint = "tcp://127.0.0.1:5599";
+
+    // Radio binds (like a server)
+    radio.bind(endpoint).await?;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Dish connects and joins a group
+    dish.connect(endpoint).await?;
+    dish.set_option_raw(JOIN, b"news").await?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Send a message with a group from Radio
+    let mut msg = Msg::from_static(b"Breaking news content");
+    msg.set_group("news")?;
+    radio.send(msg).await?;
+
+    // Receive the message on Dish
+    let received = dish.recv().await?;
+    println!("Received: {}", String::from_utf8_lossy(received.data().unwrap()));
+    println!("Group: {}", String::from_utf8_lossy(received.group().unwrap()));
+
+    ctx.term().await?;
+    Ok(())
+}
+```
+
+### Example: Multiple Groups
+
+A Dish can subscribe to multiple groups:
+
+```rust
+// Dish subscribes to multiple groups
+dish.set_option_raw(JOIN, b"sports").await?;
+dish.set_option_raw(JOIN, b"news").await?;
+
+// Now the dish will receive messages from both groups
+```
+
+### Example: Leaving a Group
+
+```rust
+// Dish leaves a group
+dish.set_option_raw(LEAVE, b"news").await?;
+// Messages with group "news" will no longer be received
+```
+
+### Important Behaviors
+
+1.  **Messages without a group are rejected**: Sending a message from a Radio without setting a group will return an error.
+2.  **No multipart messages**: Radio-Dish sockets do not support multipart messages. Attempting to use `send_multipart()` or receiving multi-part messages will return an error.
+3.  **Messages dropped if not subscribed**: If a Dish has not joined a group, messages with that group will be silently dropped by the Radio.
+4.  **Thread-safe**: Unlike Pub-Sub, Radio-Dish sockets can be used from multiple threads safely.
+5.  **Filtering on sender**: Group filtering is performed on the Radio side, potentially reducing network traffic compared to Pub-Sub.
+
+### Transport Support
+
+Radio-Dish works with:
+- `tcp://` (recommended for network communication)
+- `ipc://` (requires `ipc` feature, Unix-like systems)
+- `inproc://` (requires `inproc` feature, same process)
 
 ## Security Mechanisms
 

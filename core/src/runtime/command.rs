@@ -1,8 +1,8 @@
+#[cfg(feature = "io-uring")]
+use crate::Blob;
 use crate::error::ZmqError;
 use crate::message::Msg;
 use crate::socket::MonitorSender;
-#[cfg(feature = "io-uring")]
-use crate::Blob;
 
 #[cfg(feature = "io-uring")]
 use std::os::unix::io::RawFd;
@@ -25,17 +25,17 @@ pub enum Command {
   },
   /// Command to connect the socket to a remote endpoint.
   UserConnect {
-    endpoint: String,                                // The endpoint string to connect to.
+    endpoint: String, // The endpoint string to connect to.
     reply_tx: oneshot::Sender<Result<(), ZmqError>>, // Channel to send the connect result back.
   },
   /// Command to disconnect from a specific endpoint.
   UserDisconnect {
-    endpoint: String,                                // The endpoint string to disconnect from.
+    endpoint: String, // The endpoint string to disconnect from.
     reply_tx: oneshot::Sender<Result<(), ZmqError>>, // Channel to send the disconnect result back.
   },
   /// Command to unbind from a specific endpoint.
   UserUnbind {
-    endpoint: String,                                // The endpoint string to unbind from.
+    endpoint: String, // The endpoint string to unbind from.
     reply_tx: oneshot::Sender<Result<(), ZmqError>>, // Channel to send the unbind result back.
   },
   /// Command to send a message.
@@ -55,7 +55,7 @@ pub enum Command {
   },
   /// Command to get a socket option's value.
   UserGetOpt {
-    option: i32,                                          // The integer ID of the option to get.
+    option: i32, // The integer ID of the option to get.
     reply_tx: oneshot::Sender<Result<Vec<u8>, ZmqError>>, // Channel to send the option value or error back.
   },
   /// Command to register a monitor channel for socket events.

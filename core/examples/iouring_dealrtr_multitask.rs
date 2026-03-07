@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use futures::future::join_all;
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use rzmq::socket::{events::SocketEvent, options as zmq_opts};
-use rzmq::uring::{initialize_uring_backend, shutdown_uring_backend, UringConfig};
+use rzmq::uring::{UringConfig, initialize_uring_backend, shutdown_uring_backend};
 use rzmq::{Context, Msg, MsgFlags, Socket, SocketType, ZmqError};
 use std::collections::HashMap;
 use std::future::Future;

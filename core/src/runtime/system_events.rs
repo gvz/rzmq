@@ -3,7 +3,7 @@
 use crate::message::Msg;
 use crate::runtime::mailbox::MailboxSender as SessionCommandMailboxSender;
 use crate::socket::connection_iface::ISocketConnection;
-use crate::{error::ZmqError, Blob};
+use crate::{Blob, error::ZmqError};
 
 use std::fmt;
 #[cfg(feature = "io-uring")]
@@ -221,7 +221,7 @@ impl fmt::Debug for SystemEvent {
         .field("parent_core_id", parent_core_id)
         .field("connection_identifier", connection_identifier)
         .field("peer_identity", peer_identity)
-        .field("peer_socket_type", peer_socket_type) 
+        .field("peer_socket_type", peer_socket_type)
         .finish(),
       SystemEvent::ConnectionAttemptFailed {
         parent_core_id,

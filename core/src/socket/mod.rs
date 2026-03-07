@@ -13,9 +13,11 @@ pub(crate) mod connection_iface;
 
 // Declare modules for each specific socket type implementation (ISocket trait implementors).
 pub mod dealer_socket;
+pub mod dish_socket;
 pub mod pub_socket;
 pub mod pull_socket;
 pub mod push_socket;
+pub mod radio_socket;
 pub mod rep_socket;
 pub mod req_socket;
 pub mod router_socket;
@@ -29,8 +31,8 @@ use crate::runtime::{Command, MailboxSender}; // For actor communication.
 use crate::socket::options::SocketOptions; // For initial socket configuration.
 
 // Import specific socket pattern implementations.
-use crate::socket::core::SocketCore; // The core actor logic.
 use crate::Blob;
+use crate::socket::core::SocketCore; // The core actor logic.
 
 use async_trait::async_trait; // For defining asynchronous traits.
 use std::sync::Arc; // For shared ownership of `SocketCore`.
@@ -172,7 +174,8 @@ pub trait ISocket: Send + Sync + 'static {
   /// # Arguments
   /// * `pipe_id` - The ID of the pipe (from `SocketCore`'s perspective, usually its read ID) where the event originated.
   /// * `event_command` - The actual `Command` variant representing the pipe event (e.g., `PipeMessageReceived`, `PipeClosedByPeer`).
-  async fn handle_pipe_event(&self, pipe_id: usize, event_command: Command) -> Result<(), ZmqError>;
+  async fn handle_pipe_event(&self, pipe_id: usize, event_command: Command)
+  -> Result<(), ZmqError>;
 
   /// Called by `SocketCore` when a new connection (represented by a pair of data pipes)
   /// is successfully established and attached to this socket.
@@ -183,7 +186,12 @@ pub trait ISocket: Send + Sync + 'static {
   /// * `pipe_read_id` - The ID `SocketCore` uses to read messages from this peer (Session writes to this).
   /// * `pipe_write_id` - The ID `SocketCore` uses to write messages to this peer (Session reads from this).
   /// * `peer_identity` - Optional identity of the peer, established during the ZMTP handshake (e.g., for ROUTER).
-  async fn pipe_attached(&self, pipe_read_id: usize, pipe_write_id: usize, peer_identity: Option<&[u8]>);
+  async fn pipe_attached(
+    &self,
+    pipe_read_id: usize,
+    pipe_write_id: usize,
+    peer_identity: Option<&[u8]>,
+  );
 
   /// Called by `SocketCore` when the true ZMTP identity of a peer connected via
   /// the given `pipe_read_id` has been established (e.g., from `PeerIdentityEstablished` event).
@@ -202,7 +210,7 @@ pub trait ISocket: Send + Sync + 'static {
 }
 
 // Re-export types from sub-modules for easier access at `rzmq::socket::*`.
-pub use events::{MonitorReceiver, MonitorSender, SocketEvent, DEFAULT_MONITOR_CAPACITY};
+pub use events::{DEFAULT_MONITOR_CAPACITY, MonitorReceiver, MonitorSender, SocketEvent};
 pub use options::*; // Re-export all socket option constants (e.g., SNDHWM).
 pub use types::{Socket, SocketType}; // Re-export the public Socket handle and SocketType enum.
 

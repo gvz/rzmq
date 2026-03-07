@@ -8,6 +8,19 @@ pub const RCVHWM: i32 = 24;
 pub const LINGER: i32 = 17;
 pub const SUBSCRIBE: i32 = 6;
 pub const UNSUBSCRIBE: i32 = 7;
+/// DISH socket option: join a group.
+/// Value is the group name as raw bytes (1–255 bytes; bytes must be 1–255).
+/// Joining a group causes the DISH socket to receive messages tagged with
+/// that group by a connected RADIO socket.
+/// Matches libzmq's ZMQ_JOIN = 74.
+pub const JOIN: i32 = 74;
+
+/// DISH socket option: leave a group.
+/// Value is the group name as raw bytes.
+/// Leaving a group stops delivery of messages tagged with that group.
+/// Matches libzmq's ZMQ_LEAVE = 75.
+pub const LEAVE: i32 = 75;
+
 pub const ROUTING_ID: i32 = 5; // Often called ZMQ_IDENTITY
 pub const RECONNECT_IVL: i32 = 18; // ZMQ_RECONNECT_IVL
 pub const RECONNECT_IVL_MAX: i32 = 21; // ZMQ_RECONNECT_IVL_MAX
@@ -237,18 +250,26 @@ impl From<&SocketOptions> for ZmtpEngineConfig {
   fn from(options: &SocketOptions) -> Self {
     // Determine if any security mechanism is active.
     let security_enabled = options.plain_options.enabled
-    || {
+      || {
         #[cfg(feature = "noise_xx")]
-        { options.noise_xx_options.enabled }
+        {
+          options.noise_xx_options.enabled
+        }
         #[cfg(not(feature = "noise_xx"))]
-        { false }
-    }
-    || {
+        {
+          false
+        }
+      }
+      || {
         #[cfg(feature = "curve")]
-        { options.curve_options.enabled }
+        {
+          options.curve_options.enabled
+        }
         #[cfg(not(feature = "curve"))]
-        { false }
-    };
+        {
+          false
+        }
+      };
 
     ZmtpEngineConfig {
       routing_id: options.routing_id.clone(),

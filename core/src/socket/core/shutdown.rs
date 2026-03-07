@@ -1,9 +1,9 @@
 use crate::error::ZmqError;
 use crate::runtime::{ActorType, Command, SystemEvent};
+use crate::socket::ISocket;
 use crate::socket::connection_iface::ISocketConnection;
 use crate::socket::core::state::{CoreState, EndpointType, ShutdownCoordinator, ShutdownPhase};
-use crate::socket::core::{command_processor, pipe_manager, SocketCore};
-use crate::socket::ISocket;
+use crate::socket::core::{SocketCore, command_processor, pipe_manager};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -212,7 +212,7 @@ pub(crate) async fn initiate_core_shutdown(
   if coordinator.state != ShutdownPhase::Running {
     return;
   }
-  
+
   tracing::info!(
     handle = core_handle,
     was_due_to_error,
@@ -384,9 +384,9 @@ async fn close_active_connections(
       );
       let linger_opt_val = core_arc.core_state.read().options.linger;
       coordinator.start_linger_if_needed(linger_opt_val, core_handle); // Call the method on coordinator
-                                                                       // The check for linger expiry and advancing to cleaning will happen in the main command_loop's linger_check_interval.
-                                                                       // Or, we can replicate that check here if we want to be more proactive.
-                                                                       // For now, let linger_check_interval handle the next step.
+      // The check for linger expiry and advancing to cleaning will happen in the main command_loop's linger_check_interval.
+      // Or, we can replicate that check here if we want to be more proactive.
+      // For now, let linger_check_interval handle the next step.
     }
   }
 }
@@ -400,19 +400,20 @@ pub(crate) async fn handle_actor_stopping_event(
   error_opt: Option<&ZmqError>,
 ) {
   let core_handle = core_arc.handle;
-  
+
   // First, perform the resource cleanup regardless of the shutdown phase.
   // This removes the endpoint from the main map.
   // This function returns true if the cleanup might warrant a reconnect.
   let should_consider_reconnect = pipe_manager::cleanup_stopped_child_resources(
-      core_arc.clone(),
-      socket_logic_strong,
-      stopped_actor_id,
-      stopped_actor_type,
-      endpoint_uri_opt,
-      error_opt,
-      false, // Assume not a full shutdown initially, we check phase below.
-  ).await;
+    core_arc.clone(),
+    socket_logic_strong,
+    stopped_actor_id,
+    stopped_actor_type,
+    endpoint_uri_opt,
+    error_opt,
+    false, // Assume not a full shutdown initially, we check phase below.
+  )
+  .await;
 
   // Now, acquire the coordinator lock to update the shutdown state.
   let mut coordinator = core_arc.shutdown_coordinator.lock().await;
@@ -436,12 +437,19 @@ pub(crate) async fn handle_actor_stopping_event(
           // Calculate delay and update state
           let mut state = core_arc.core_state.write();
           let options = state.options.clone();
-          
-          // Default to 100ms if not set, consistent with ZMQ defaults
-          let base = options.reconnect_ivl.unwrap_or(std::time::Duration::from_millis(100));
-          let max = options.reconnect_ivl_max.unwrap_or(std::time::Duration::from_secs(60));
 
-          let recon_state = state.reconnect_states.entry(target_uri.clone()).or_default();
+          // Default to 100ms if not set, consistent with ZMQ defaults
+          let base = options
+            .reconnect_ivl
+            .unwrap_or(std::time::Duration::from_millis(100));
+          let max = options
+            .reconnect_ivl_max
+            .unwrap_or(std::time::Duration::from_secs(60));
+
+          let recon_state = state
+            .reconnect_states
+            .entry(target_uri.clone())
+            .or_default();
           let delay = recon_state.on_connection_failure(base, max);
 
           tracing::info!(
@@ -451,7 +459,7 @@ pub(crate) async fn handle_actor_stopping_event(
             next_attempt_in = ?delay,
             "Session stopped. Scheduled for reconnect via passive backoff."
           );
-          
+
           // Note: We do NOT spawn a task here. The main command_loop will pick this up.
         }
       }
@@ -489,10 +497,10 @@ pub(crate) async fn handle_actor_stopping_event(
     // The resource cleanup was still important, but we don't need to touch the counter.
     ShutdownPhase::Lingering | ShutdownPhase::CleaningPipes | ShutdownPhase::Finished => {
       tracing::debug!(
-          handle = core_handle,
-          child_id = stopped_actor_id,
-          "Received late ActorStopping event during phase {:?}. Cleanup already done.",
-          coordinator.state
+        handle = core_handle,
+        child_id = stopped_actor_id,
+        "Received late ActorStopping event during phase {:?}. Cleanup already done.",
+        coordinator.state
       );
     }
   }

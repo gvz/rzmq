@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use super::system_events::SystemEvent;
-use tokio::sync::broadcast::{self, error::SendError, Receiver, Sender};
+use tokio::sync::broadcast::{self, Receiver, Sender, error::SendError};
 use tracing;
 
 // Define a reasonable capacity for the bus
@@ -18,14 +18,20 @@ impl EventBus {
   /// Creates a new EventBus with default capacity.
   pub fn new() -> Self {
     let (sender, _) = broadcast::channel(DEFAULT_EVENT_BUS_CAPACITY);
-    tracing::debug!(capacity = DEFAULT_EVENT_BUS_CAPACITY, "Created new EventBus");
+    tracing::debug!(
+      capacity = DEFAULT_EVENT_BUS_CAPACITY,
+      "Created new EventBus"
+    );
     Self { sender }
   }
 
   /// Creates a new EventBus with specific capacity.
   pub fn with_capacity(capacity: usize) -> Self {
     let (sender, _) = broadcast::channel(capacity.max(1)); // Ensure capacity >= 1
-    tracing::debug!(capacity = capacity.max(1), "Created new EventBus with capacity");
+    tracing::debug!(
+      capacity = capacity.max(1),
+      "Created new EventBus with capacity"
+    );
     Self { sender }
   }
 

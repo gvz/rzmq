@@ -18,6 +18,8 @@ pub const ZMTP_CMD_SUBSCRIBE_NAME: &[u8] = b"SUBSCRIBE";
 pub const ZMTP_CMD_CANCEL_NAME: &[u8] = b"CANCEL";
 pub const ZMTP_CMD_PING_NAME: &[u8] = b"PING";
 pub const ZMTP_CMD_PONG_NAME: &[u8] = b"PONG";
+pub const ZMTP_CMD_JOIN_NAME: &[u8] = b"JOIN";
+pub const ZMTP_CMD_LEAVE_NAME: &[u8] = b"LEAVE";
 // Security mechanisms define others (HELLO, INITIATE, etc.)
 
 /// Represents known ZMTP commands relevant to basic operation.
@@ -27,6 +29,8 @@ pub(crate) enum ZmtpCommand {
   Pong(Bytes),      // Contains Context
   Ready(ZmtpReady), // Store parsed READY info
   Error,            // TODO: Add reason Vec<u8>
+  Join(Bytes),      // NEW — carries the group name bytes
+  Leave(Bytes),     // NEW — carries the group name bytes
   // Add other commands like Subscribe, Cancel as needed
   Unknown(Bytes), // For commands we don't handle specifically
 }
@@ -63,6 +67,17 @@ impl ZmtpCommand {
       // ERROR command format: <length=5>ERROR<Reason>
       // TODO: Parse reason later
       Some(ZmtpCommand::Error)
+    // JOIN: body = \x04 J O I N <group_bytes>
+    // name length prefix is 4 (len of "JOIN"), body[0] = \x04, body[1..5] = "JOIN"
+    } else if body.starts_with(b"\x04JOIN") {
+      // group is everything after the 5-byte name header (\x04 + "JOIN")
+      let group = Bytes::copy_from_slice(&body[5..]);
+      Some(ZmtpCommand::Join(group))
+    // LEAVE: body = \x05 L E A V E <group_bytes>
+    // name length prefix is 5 (len of "LEAVE"), body[0] = \x05, body[1..6] = "LEAVE"
+    } else if body.starts_with(b"\x05LEAVE") {
+      let group = Bytes::copy_from_slice(&body[6..]);
+      Some(ZmtpCommand::Leave(group))
     } else {
       Some(ZmtpCommand::Unknown(Bytes::copy_from_slice(body)))
     }
@@ -92,6 +107,28 @@ impl ZmtpCommand {
     msg.set_flags(MsgFlags::COMMAND);
     msg
   }
+
+  /// Creates a JOIN command message for the given group.
+  /// The resulting Msg has MsgFlags::COMMAND set.
+  pub fn create_join(group: &[u8]) -> Msg {
+    let mut body = Vec::with_capacity(5 + group.len());
+    body.extend_from_slice(b"\x04JOIN");
+    body.extend_from_slice(group);
+    let mut msg = Msg::from_vec(body);
+    msg.set_flags(MsgFlags::COMMAND);
+    msg
+  }
+
+  /// Creates a LEAVE command message for the given group.
+  /// The resulting Msg has MsgFlags::COMMAND set.
+  pub fn create_leave(group: &[u8]) -> Msg {
+    let mut body = Vec::with_capacity(6 + group.len());
+    body.extend_from_slice(b"\x05LEAVE");
+    body.extend_from_slice(group);
+    let mut msg = Msg::from_vec(body);
+    msg.set_flags(MsgFlags::COMMAND);
+    msg
+  }
 }
 
 /// Represents a parsed ZMTP READY command.
@@ -112,7 +149,9 @@ impl ZmtpReady {
       // Read name
       let name_len = cursor.get_u8() as usize;
       if cursor.remaining() < name_len {
-        return Err(ZmqError::ProtocolViolation("Invalid metadata name length".into()));
+        return Err(ZmqError::ProtocolViolation(
+          "Invalid metadata name length".into(),
+        ));
       }
       let name_bytes = cursor.copy_to_bytes(name_len);
       let name = String::from_utf8(name_bytes.to_vec())
@@ -120,11 +159,15 @@ impl ZmtpReady {
 
       // Read value
       if cursor.remaining() < 4 {
-        return Err(ZmqError::ProtocolViolation("Invalid metadata value length".into()));
+        return Err(ZmqError::ProtocolViolation(
+          "Invalid metadata value length".into(),
+        ));
       }
       let value_len = cursor.get_u32() as usize; // Big Endian from get_u32
       if cursor.remaining() < value_len {
-        return Err(ZmqError::ProtocolViolation("Invalid metadata value length".into()));
+        return Err(ZmqError::ProtocolViolation(
+          "Invalid metadata value length".into(),
+        ));
       }
       let value_bytes = cursor.copy_to_bytes(value_len);
 
@@ -161,7 +204,7 @@ impl ZmtpReady {
     // Prepend command name (length prefixed)
     let name = ZMTP_CMD_READY_NAME;
     body.put_u8(name.len() as u8); // Not ZMTP standard? Check spec 4.1 Command frame
-                                   // Re-checking: Yes, command name is length-prefixed string in body.
+    // Re-checking: Yes, command name is length-prefixed string in body.
     body.put_slice(name);
     // Append encoded properties
     cmd.encode_properties(&mut body);

@@ -1,8 +1,8 @@
 #![cfg(feature = "io-uring")]
 
+use crate::ZmqError;
 use crate::message::Msg;
 use crate::socket::ZmtpEngineConfig;
-use crate::ZmqError;
 
 use std::fmt;
 use std::net::SocketAddr;
@@ -75,7 +75,6 @@ pub enum UringOpRequest {
 }
 
 impl UringOpRequest {
-  
   pub(crate) fn get_user_data_ref(&self) -> UserData {
     match self {
       Self::Nop { user_data, .. }
@@ -136,7 +135,9 @@ impl fmt::Debug for UringOpRequest {
         .field("num_buffers", num_buffers)
         .field("buffer_capacity", buffer_capacity)
         .finish_non_exhaustive(),
-      UringOpRequest::RegisterRawBuffers { user_data, buffers, .. } => f
+      UringOpRequest::RegisterRawBuffers {
+        user_data, buffers, ..
+      } => f
         .debug_struct("RegisterRawBuffers")
         .field("user_data", user_data)
         .field("buffers_count", &buffers.len())
@@ -238,9 +239,10 @@ pub enum UringOpCompletion {
 impl fmt::Debug for UringOpCompletion {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      UringOpCompletion::NopSuccess { user_data } => {
-        f.debug_struct("NopSuccess").field("user_data", user_data).finish()
-      }
+      UringOpCompletion::NopSuccess { user_data } => f
+        .debug_struct("NopSuccess")
+        .field("user_data", user_data)
+        .finish(),
       UringOpCompletion::InitializeBufferRingSuccess { user_data, bgid } => f
         .debug_struct("InitializeBufferRingSuccess")
         .field("user_data", user_data)

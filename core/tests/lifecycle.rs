@@ -1,5 +1,5 @@
-use rzmq::socket::options::SNDTIMEO;
 use rzmq::socket::SocketEvent;
+use rzmq::socket::options::SNDTIMEO;
 use rzmq::{Msg, SocketType, ZmqError};
 use std::sync::Arc;
 use std::time::Duration;
@@ -90,7 +90,10 @@ async fn test_context_term_closes_sockets() -> Result<(), ZmqError> {
     "Expected error setting option after term, got {:?}",
     setopt_res
   );
-  println!("PUSH set_option_raw correctly failed: {:?}", setopt_res.err().unwrap());
+  println!(
+    "PUSH set_option_raw correctly failed: {:?}",
+    setopt_res.err().unwrap()
+  );
 
   println!("Attempting PUSH send after term (should fail)...");
   let send_res = push.send(Msg::from_static(b"After Term")).await;
@@ -99,7 +102,10 @@ async fn test_context_term_closes_sockets() -> Result<(), ZmqError> {
     "Expected error sending after term and disconnect, got {:?}",
     send_res
   );
-  println!("PUSH send correctly failed after term: {:?}", send_res.err().unwrap());
+  println!(
+    "PUSH send correctly failed after term: {:?}",
+    send_res.err().unwrap()
+  );
 
   println!("Attempting PULL recv after term (should fail)...");
   let recv_res = pull.recv().await;
@@ -209,19 +215,26 @@ async fn test_socket_explicit_close_triggers_disconnect_event() -> anyhow::Resul
     pull.connect(endpoint).await?;
 
     println!("Expecting Accepted/Handshake event...");
-    let event2 = common::wait_for_monitor_event(&push_monitor, MONITOR_EVENT_TIMEOUT, SHORT_TIMEOUT, |e| {
-      matches!(e, SocketEvent::HandshakeSucceeded { .. })
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("Accepted/Handshake event wait failed: {}", e))?;
+    let event2 =
+      common::wait_for_monitor_event(&push_monitor, MONITOR_EVENT_TIMEOUT, SHORT_TIMEOUT, |e| {
+        matches!(e, SocketEvent::HandshakeSucceeded { .. })
+      })
+      .await
+      .map_err(|e| anyhow::anyhow!("Accepted/Handshake event wait failed: {}", e))?;
     println!("PUSH Monitor: Received connection event: {:?}", event2);
 
     disconnected_endpoint_uri = match event2 {
-      SocketEvent::Accepted { endpoint: _, peer_addr } => format!("tcp://{}", peer_addr),
+      SocketEvent::Accepted {
+        endpoint: _,
+        peer_addr,
+      } => format!("tcp://{}", peer_addr),
       SocketEvent::HandshakeSucceeded { endpoint: ep } => ep,
       _ => panic!("Unexpected event type received: {:?}", event2),
     };
-    println!("Determined peer endpoint URI: {}", disconnected_endpoint_uri);
+    println!(
+      "Determined peer endpoint URI: {}",
+      disconnected_endpoint_uri
+    );
 
     tokio::time::sleep(Duration::from_millis(150)).await;
 
@@ -236,7 +249,10 @@ async fn test_socket_explicit_close_triggers_disconnect_event() -> anyhow::Resul
     println!("PULL socket closed (explicitly).");
   } // pull socket scope ends, handle is dropped
 
-  println!("Waiting for Disconnected event for {}...", disconnected_endpoint_uri);
+  println!(
+    "Waiting for Disconnected event for {}...",
+    disconnected_endpoint_uri
+  );
   common::wait_for_monitor_event(
     &push_monitor,
     MONITOR_EVENT_TIMEOUT,
@@ -371,7 +387,10 @@ async fn test_concurrent_term_and_op() -> Result<(), ZmqError> {
   // Spawn termination task
   let term_task: JoinHandle<Result<(), ZmqError>> = task::spawn(async move {
     let result = ctx.term().await; // ctx is MOVED here
-    println!("Termination task: ctx.term() finished with result: {:?}", result);
+    println!(
+      "Termination task: ctx.term() finished with result: {:?}",
+      result
+    );
     termination_complete_clone.notify_waiters(); // Signal completion
     result // Return the result
   });

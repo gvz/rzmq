@@ -7,17 +7,16 @@ pub(crate) mod state;
 
 use crate::context::Context;
 use crate::error::ZmqError;
-use crate::runtime::{mailbox, MailboxSender};
+use crate::runtime::{MailboxSender, mailbox};
+use crate::socket::ISocket;
 use crate::socket::options::SocketOptions;
 use crate::socket::types::SocketType;
-use crate::socket::ISocket;
-pub(crate) use state::{EndpointInfo, EndpointType};
 pub(crate) use state::CoreState;
 use state::ShutdownCoordinator;
+pub(crate) use state::{EndpointInfo, EndpointType};
 
 use std::sync::Arc;
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
-
 
 #[derive(Debug)]
 pub struct SocketCore {
@@ -54,14 +53,36 @@ impl SocketCore {
     });
 
     let socket_logic_arc_impl: Arc<dyn ISocket> = match socket_type {
-      SocketType::Pub => Arc::new(crate::socket::pub_socket::PubSocket::new(socket_core_arc.clone())),
-      SocketType::Sub => Arc::new(crate::socket::sub_socket::SubSocket::new(socket_core_arc.clone())),
-      SocketType::Req => Arc::new(crate::socket::req_socket::ReqSocket::new(socket_core_arc.clone())),
-      SocketType::Rep => Arc::new(crate::socket::rep_socket::RepSocket::new(socket_core_arc.clone())),
-      SocketType::Dealer => Arc::new(crate::socket::dealer_socket::DealerSocket::new(socket_core_arc.clone())),
-      SocketType::Router => Arc::new(crate::socket::router_socket::RouterSocket::new(socket_core_arc.clone())),
-      SocketType::Push => Arc::new(crate::socket::push_socket::PushSocket::new(socket_core_arc.clone())),
-      SocketType::Pull => Arc::new(crate::socket::pull_socket::PullSocket::new(socket_core_arc.clone())),
+      SocketType::Pub => Arc::new(crate::socket::pub_socket::PubSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Sub => Arc::new(crate::socket::sub_socket::SubSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Req => Arc::new(crate::socket::req_socket::ReqSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Rep => Arc::new(crate::socket::rep_socket::RepSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Dealer => Arc::new(crate::socket::dealer_socket::DealerSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Router => Arc::new(crate::socket::router_socket::RouterSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Push => Arc::new(crate::socket::push_socket::PushSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Pull => Arc::new(crate::socket::pull_socket::PullSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Radio => Arc::new(crate::socket::radio_socket::RadioSocket::new(
+        socket_core_arc.clone(),
+      )),
+      SocketType::Dish => Arc::new(crate::socket::dish_socket::DishSocket::new(
+        socket_core_arc.clone(),
+      )),
     };
 
     {

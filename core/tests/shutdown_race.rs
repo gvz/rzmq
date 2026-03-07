@@ -1,9 +1,9 @@
 use rzmq::{
-  socket::{
-    options::{RCVHWM, SNDHWM, SNDTIMEO},
-    MonitorReceiver, SocketEvent,
-  },
   Context, Msg, SocketType, ZmqError,
+  socket::{
+    MonitorReceiver, SocketEvent,
+    options::{RCVHWM, SNDHWM, SNDTIMEO},
+  },
 };
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
@@ -57,8 +57,12 @@ async fn setup_push_pull_for_race_test(
   let push = ctx.socket(SocketType::Push)?;
   let pull = ctx.socket(SocketType::Pull)?;
 
-  push.set_option_raw(SNDHWM, &TEST_HWM_RACE.to_ne_bytes()).await?;
-  pull.set_option_raw(RCVHWM, &TEST_HWM_RACE.to_ne_bytes()).await?;
+  push
+    .set_option_raw(SNDHWM, &TEST_HWM_RACE.to_ne_bytes())
+    .await?;
+  pull
+    .set_option_raw(RCVHWM, &TEST_HWM_RACE.to_ne_bytes())
+    .await?;
   // println!("[Setup {}] HWM options set to {}.", endpoint, TEST_HWM_RACE); // Add endpoint to logs
 
   let push_monitor = push.monitor_default().await?;
@@ -79,9 +83,11 @@ async fn setup_push_pull_for_race_test(
   // println!("[Setup {}] PUSH connect initiated.", endpoint);
 
   // println!("[Setup {}] Waiting for connection confirmation...", endpoint);
-  wait_for_event(&push_monitor, |e| matches!(e, SocketEvent::HandshakeSucceeded { .. }))
-    .await
-    .map_err(|e| ZmqError::Internal(format!("[{}] PULL Connection event error: {}", endpoint, e)))?;
+  wait_for_event(&push_monitor, |e| {
+    matches!(e, SocketEvent::HandshakeSucceeded { .. })
+  })
+  .await
+  .map_err(|e| ZmqError::Internal(format!("[{}] PULL Connection event error: {}", endpoint, e)))?;
   // println!("[Setup {}] PULL Connection confirmed via monitor.", endpoint);
 
   sleep(Duration::from_millis(50)).await;
@@ -94,7 +100,12 @@ async fn setup_push_pull_for_race_test(
 // Runs one PUSH/PULL pair and tries to trigger the race
 async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), String> {
   println!("[Pair {}] Starting...", endpoint);
-  let (push_res, pull_res) = match timeout(SETUP_TIMEOUT, setup_push_pull_for_race_test(&ctx, &endpoint)).await {
+  let (push_res, pull_res) = match timeout(
+    SETUP_TIMEOUT,
+    setup_push_pull_for_race_test(&ctx, &endpoint),
+  )
+  .await
+  {
     Ok(Ok(sockets)) => sockets,
     Ok(Err(e)) => return Err(format!("[Pair {}] Setup failed: {}", endpoint, e)),
     Err(_) => return Err(format!("[Pair {}] Setup timed out overall", endpoint)),
@@ -120,11 +131,16 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
           Ok(Ok(())) => sent_count += 1,
           Ok(Err(ZmqError::ResourceLimitReached)) => {
             // This is expected if HWM is hit.
-            println!("[Sender {}] HWM reached at msg {}. Yielding.", endpoint_clone, i);
+            println!(
+              "[Sender {}] HWM reached at msg {}. Yielding.",
+              endpoint_clone, i
+            );
             tokio::task::yield_now().await; // Yield to let receiver catch up
-                                            // Optionally, retry the send or break if testing strict send behavior
+            // Optionally, retry the send or break if testing strict send behavior
           }
-          Ok(Err(ZmqError::InvalidState(ref s))) if s.contains("closing") || s.contains("terminated") => {
+          Ok(Err(ZmqError::InvalidState(ref s)))
+            if s.contains("closing") || s.contains("terminated") =>
+          {
             println!(
               "[Sender {}] Socket closed/terminated while sending msg {}. Stopping.",
               endpoint_clone, i
@@ -136,7 +152,10 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
             break;
           }
           Err(_) => {
-            println!("[Sender {}] Timeout sending msg {}. Stopping.", endpoint_clone, i);
+            println!(
+              "[Sender {}] Timeout sending msg {}. Stopping.",
+              endpoint_clone, i
+            );
             break;
           }
         }
@@ -166,7 +185,9 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
       loop {
         match timeout(individual_recv_timeout, pull_clone.recv()).await {
           Ok(Ok(_msg)) => recv_count += 1,
-          Ok(Err(ZmqError::InvalidState(ref s))) if s.contains("closing") || s.contains("terminated") => {
+          Ok(Err(ZmqError::InvalidState(ref s)))
+            if s.contains("closing") || s.contains("terminated") =>
+          {
             println!(
               "[Receiver {}] Got 'Socket closing/terminated' after {} msgs.",
               endpoint_clone, recv_count
@@ -175,9 +196,9 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
           }
           Ok(Err(ZmqError::Timeout)) => {
             println!(
-                            "[Receiver {}] Timed out waiting for message (after {} msgs, timeout {:?}). Assuming end of stream for this pair.",
-                            endpoint_clone, recv_count, individual_recv_timeout
-                        );
+              "[Receiver {}] Timed out waiting for message (after {} msgs, timeout {:?}). Assuming end of stream for this pair.",
+              endpoint_clone, recv_count, individual_recv_timeout
+            );
             break;
           }
           Ok(Err(e)) => {
@@ -228,7 +249,10 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
   let push_close_result = timeout(socket_close_timeout, push.close()).await;
   match push_close_result {
     Ok(Ok(())) => println!("[Pair {}] PUSH socket closed successfully.", endpoint),
-    Ok(Err(e)) => println!("[Pair {}] PUSH socket close returned error: {}", endpoint, e),
+    Ok(Err(e)) => println!(
+      "[Pair {}] PUSH socket close returned error: {}",
+      endpoint, e
+    ),
     Err(_) => println!(
       "[Pair {}] PUSH socket close timed out after {:?}.",
       endpoint, socket_close_timeout
@@ -242,14 +266,20 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
   let pull_close_result = timeout(socket_close_timeout, pull.close()).await;
   match pull_close_result {
     Ok(Ok(())) => println!("[Pair {}] PULL socket closed successfully.", endpoint),
-    Ok(Err(e)) => println!("[Pair {}] PULL socket close returned error: {}", endpoint, e),
+    Ok(Err(e)) => println!(
+      "[Pair {}] PULL socket close returned error: {}",
+      endpoint, e
+    ),
     Err(_) => println!(
       "[Pair {}] PULL socket close timed out after {:?}.",
       endpoint, socket_close_timeout
     ),
   }
 
-  println!("[Pair {}] Sockets closed. Waiting for tasks to complete...", endpoint);
+  println!(
+    "[Pair {}] Sockets closed. Waiting for tasks to complete...",
+    endpoint
+  );
 
   // Wait for tasks to fully join *after* close initiated and awaited (or timed out)
   let sent_res = match sender_task.await {
@@ -258,7 +288,12 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
   };
   let recv_res = match receiver_task.await {
     Ok(r_res) => r_res,
-    Err(e) => return Err(format!("[Pair {}] Receiver task panicked: {:?}", endpoint, e)),
+    Err(e) => {
+      return Err(format!(
+        "[Pair {}] Receiver task panicked: {:?}",
+        endpoint, e
+      ));
+    }
   };
 
   println!(
@@ -267,8 +302,10 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
   );
 
   // Perform checks
-  let actual_sent = sent_res.map_err(|e| format!("[{}] Sender task failed internally: {}", endpoint, e))?;
-  let actual_recv = recv_res.map_err(|e| format!("[{}] Receiver task failed internally: {}", endpoint, e))?;
+  let actual_sent =
+    sent_res.map_err(|e| format!("[{}] Sender task failed internally: {}", endpoint, e))?;
+  let actual_recv =
+    recv_res.map_err(|e| format!("[{}] Receiver task failed internally: {}", endpoint, e))?;
 
   // In a race condition test, sent might not equal received if shutdown is abrupt.
   // The key is that the process doesn't deadlock or panic, and `ctx.term()` is clean.
@@ -276,7 +313,10 @@ async fn run_single_pair(ctx: Arc<Context>, endpoint: String) -> Result<(), Stri
   // For now, we'll keep it simple: tasks should complete without internal errors.
   // The original problem was about `ctx.term()` cutting things short.
   if actual_sent > 0 && actual_recv < actual_sent {
-    println!("[Pair {}] WARNING: Sent {} messages, but received only {}. Some messages might have been lost during shutdown race.", endpoint, actual_sent, actual_recv);
+    println!(
+      "[Pair {}] WARNING: Sent {} messages, but received only {}. Some messages might have been lost during shutdown race.",
+      endpoint, actual_sent, actual_recv
+    );
     // Depending on test strictness, this could be an error.
     // For now, let it be a warning, as the primary goal is to avoid ctx.term() issues.
   }
@@ -301,7 +341,10 @@ async fn test_push_pull_concurrent_shutdown_race() {
     pair_handles.push(handle);
   }
 
-  println!("[Main] Waiting for all {} pairs to complete...", NUM_CONCURRENT_PAIRS);
+  println!(
+    "[Main] Waiting for all {} pairs to complete...",
+    NUM_CONCURRENT_PAIRS
+  );
   let all_results = futures::future::join_all(pair_handles).await;
   println!("[Main] All pairs joined.");
 
@@ -319,7 +362,11 @@ async fn test_push_pull_concurrent_shutdown_race() {
     Ok(Ok(())) => println!("[Main] Final context term completed successfully."),
     Ok(Err(e)) => {
       // If term itself returns an error.
-      assert!(false, "Final context termination failed with ZmqError: {}", e);
+      assert!(
+        false,
+        "Final context termination failed with ZmqError: {}",
+        e
+      );
     }
     Err(_) => {
       // If term timed out.
@@ -347,7 +394,11 @@ async fn test_push_pull_concurrent_shutdown_race() {
     }
   }
 
-  assert!(failures.is_empty(), "One or more test pairs failed: {:?}", failures);
+  assert!(
+    failures.is_empty(),
+    "One or more test pairs failed: {:?}",
+    failures
+  );
   println!("--- Test test_push_pull_concurrent_shutdown_race Finished ---");
 }
 
@@ -363,8 +414,13 @@ async fn test_chaotic_shutdown() -> Result<(), ZmqError> {
   // --- Setup PULL Socket (The single receiver) ---
   println!("Creating 1 PULL socket, binding to {}...", CHAOS_ENDPOINT);
   let pull = ctx.socket(SocketType::Pull)?;
-  pull.set_option_raw(RCVHWM, &CHAOS_HWM.to_ne_bytes()).await?;
-  pull.bind(CHAOS_ENDPOINT).await.expect("Failed to bind PULL socket");
+  pull
+    .set_option_raw(RCVHWM, &CHAOS_HWM.to_ne_bytes())
+    .await?;
+  pull
+    .bind(CHAOS_ENDPOINT)
+    .await
+    .expect("Failed to bind PULL socket");
   let pull_socket = Arc::new(pull);
   pull_sockets.push(pull_socket.clone());
   println!("[Setup] PULL bound.");
@@ -376,7 +432,9 @@ async fn test_chaotic_shutdown() -> Result<(), ZmqError> {
   );
   for i in 0..NUM_PUSHERS {
     let push = ctx.socket(SocketType::Push)?;
-    push.set_option_raw(SNDHWM, &CHAOS_HWM.to_ne_bytes()).await?;
+    push
+      .set_option_raw(SNDHWM, &CHAOS_HWM.to_ne_bytes())
+      .await?;
     push.set_option_raw(SNDTIMEO, &(0i32).to_ne_bytes()).await?; // Non-blocking send
 
     // Connect directly - for inproc, connect() awaits confirmation
@@ -438,7 +496,12 @@ async fn test_chaotic_shutdown() -> Result<(), ZmqError> {
     let start = Instant::now();
     loop {
       // Use a slightly longer timeout for recv
-      match timeout(CHAOS_DURATION + Duration::from_secs(2), pull_socket_clone.recv()).await {
+      match timeout(
+        CHAOS_DURATION + Duration::from_secs(2),
+        pull_socket_clone.recv(),
+      )
+      .await
+      {
         Ok(Ok(_msg)) => {
           count += 1;
         }
@@ -503,7 +566,10 @@ async fn test_chaotic_shutdown() -> Result<(), ZmqError> {
           println!("[Main] Pusher {} finished, sent ~{}.", i, count);
           total_sent += count;
         } else {
-          println!("[Main] Puller {} finished, received {}.", puller_count, count);
+          println!(
+            "[Main] Puller {} finished, received {}.",
+            puller_count, count
+          );
           total_recv += count;
           puller_count += 1;
         }
@@ -582,9 +648,14 @@ async fn test_chaotic_shutdown_tcp() -> Result<(), ZmqError> {
   let mut task_handles: Vec<JoinHandle<_>> = Vec::new();
 
   // --- Setup PULL Socket (The single receiver) ---
-  println!("Creating 1 PULL socket, binding to {}...", TCP_CHAOS_ENDPOINT);
+  println!(
+    "Creating 1 PULL socket, binding to {}...",
+    TCP_CHAOS_ENDPOINT
+  );
   let pull = ctx.socket(SocketType::Pull)?;
-  pull.set_option_raw(RCVHWM, &TCP_CHAOS_HWM.to_ne_bytes()).await?;
+  pull
+    .set_option_raw(RCVHWM, &TCP_CHAOS_HWM.to_ne_bytes())
+    .await?;
 
   // Monitor the PULL socket to wait for connections
   let pull_monitor = pull.monitor_default().await?;
@@ -612,7 +683,9 @@ async fn test_chaotic_shutdown_tcp() -> Result<(), ZmqError> {
 
   for i in 0..TCP_NUM_PUSHERS {
     let push = ctx.socket(SocketType::Push)?;
-    push.set_option_raw(SNDHWM, &TCP_CHAOS_HWM.to_ne_bytes()).await?;
+    push
+      .set_option_raw(SNDHWM, &TCP_CHAOS_HWM.to_ne_bytes())
+      .await?;
     push.set_option_raw(SNDTIMEO, &(0i32).to_ne_bytes()).await?; // Non-blocking send
 
     // Spawn a task to connect
@@ -657,7 +730,11 @@ async fn test_chaotic_shutdown_tcp() -> Result<(), ZmqError> {
       );
     }
     // Wait for the next connection event
-    match wait_for_event_tcp(&pull_monitor, |e| matches!(e, SocketEvent::HandshakeSucceeded { .. })).await {
+    match wait_for_event_tcp(&pull_monitor, |e| {
+      matches!(e, SocketEvent::HandshakeSucceeded { .. })
+    })
+    .await
+    {
       Ok(_) => {
         confirmed_connections += 1;
         println!(
@@ -666,7 +743,10 @@ async fn test_chaotic_shutdown_tcp() -> Result<(), ZmqError> {
         );
       }
       Err(e) => {
-        panic!("[Setup] Error waiting for PULL monitor connection event: {}", e);
+        panic!(
+          "[Setup] Error waiting for PULL monitor connection event: {}",
+          e
+        );
       }
     }
   }
@@ -714,7 +794,12 @@ async fn test_chaotic_shutdown_tcp() -> Result<(), ZmqError> {
     let mut count = 0u64;
     let start = Instant::now();
     loop {
-      match timeout(TCP_CHAOS_DURATION + Duration::from_secs(2), pull_socket_clone.recv()).await {
+      match timeout(
+        TCP_CHAOS_DURATION + Duration::from_secs(2),
+        pull_socket_clone.recv(),
+      )
+      .await
+      {
         Ok(Ok(_msg)) => {
           count += 1;
         }
@@ -769,7 +854,10 @@ async fn test_chaotic_shutdown_tcp() -> Result<(), ZmqError> {
           println!("[Main] Pusher {} finished, sent ~{}.", i, count);
           total_sent += count;
         } else {
-          println!("[Main] Puller {} finished, received {}.", puller_count, count);
+          println!(
+            "[Main] Puller {} finished, received {}.",
+            puller_count, count
+          );
           total_recv += count;
           puller_count += 1;
         }

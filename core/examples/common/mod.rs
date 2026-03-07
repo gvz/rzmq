@@ -55,7 +55,12 @@ pub async fn wait_for_handshake_events(
           return Err(err_msg);
         }
 
-        match tokio::time::timeout(timeout_duration.saturating_sub(wait_start.elapsed()), monitor_rx.recv()).await {
+        match tokio::time::timeout(
+          timeout_duration.saturating_sub(wait_start.elapsed()),
+          monitor_rx.recv(),
+        )
+        .await
+        {
           Ok(Ok(event)) => {
             if print_handshake_events {
               // Assuming PRINT_HANDSHAKE_EVENTS is a const bool available in scope

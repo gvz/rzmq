@@ -1,3 +1,4 @@
+use crate::ZmqError;
 use crate::message::flags::MsgFlags;
 use crate::message::metadata::Metadata;
 use bytes::Bytes;
@@ -9,7 +10,8 @@ pub struct Msg {
   // Use Bytes for efficient slicing and cloning (reference counted)
   data: Option<Bytes>,
   flags: MsgFlags,
-  metadata: Metadata, // Cloning Metadata is cheap (Arc)
+  metadata: Metadata,   // Cloning Metadata is cheap (Arc)
+  group: Option<Bytes>, // Group for RADIO-DISH pattern
 }
 
 impl Msg {
@@ -45,6 +47,41 @@ impl Msg {
   /// Returns a reference to the message payload bytes, if any.
   pub fn data(&self) -> Option<&[u8]> {
     self.data.as_deref()
+  }
+
+  /// Returns the group name attached to this message, if any.
+  /// Used by the RADIO-DISH pattern. Returns `None` for messages created
+  /// outside of the RADIO-DISH context.
+  pub fn group(&self) -> Option<&[u8]> {
+    self.group.as_deref()
+  }
+
+  /// Attaches a group name to this message.
+  ///
+  /// # Errors
+  /// Returns `Err(ZmqError::InvalidArgument)` if:
+  /// - `group` is empty (0 bytes)
+  /// - `group` exceeds 255 bytes
+  /// - any byte in `group` is `\x00` (NUL is forbidden per RFC §Group)
+  pub fn set_group(&mut self, group: impl Into<Bytes>) -> Result<(), ZmqError> {
+    let bytes: Bytes = group.into();
+    if bytes.is_empty() || bytes.len() > 255 {
+      return Err(ZmqError::InvalidArgument(
+        "Group length must be 1–255 bytes".into(),
+      ));
+    }
+    if bytes.iter().any(|&b| b == 0) {
+      return Err(ZmqError::InvalidArgument(
+        "Group bytes must be in range 1–255 (NUL is forbidden)".into(),
+      ));
+    }
+    self.group = Some(bytes);
+    Ok(())
+  }
+
+  /// Removes the group from this message.
+  pub fn clear_group(&mut self) {
+    self.group = None;
   }
 
   /// Returns the size of the message payload in bytes.
@@ -101,6 +138,12 @@ impl fmt::Debug for Msg {
       .field("size", &self.size())
       .field("flags", &self.flags)
       .field("data", &self.data().map(|d| format!("{} bytes", d.len()))) // Avoid printing large data
+      .field(
+        "group",
+        &self
+          .group()
+          .map(|g| String::from_utf8_lossy(g).into_owned()),
+      )
       .field("metadata", &self.metadata) // Relies on Metadata::Debug
       .finish()
   }

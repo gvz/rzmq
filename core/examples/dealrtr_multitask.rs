@@ -1,13 +1,13 @@
-use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, future::join_all, stream::FuturesUnordered};
 use rzmq::{
-  socket::{options::ROUTING_ID, MonitorReceiver, SocketEvent},
   Context, Msg, MsgFlags, Socket, SocketType, ZmqError,
+  socket::{MonitorReceiver, SocketEvent, options::ROUTING_ID},
 };
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::time::{sleep, timeout};
 
