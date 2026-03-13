@@ -22,7 +22,6 @@ use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
 use fibre::mpsc;
 use std::sync::Arc;
 
-const IORING_RECV_MULTISHOT: u16 = 2;
 const IORING_CQE_F_MORE: u32 = 1;
 const IORING_CQE_F_BUFFER: u32 = 1 << 16;
 const IORING_CQE_F_NOTIF: u32 = 1 << 3;
@@ -168,8 +167,8 @@ pub(crate) struct UdpUringActorConfig {
 }
 
 pub(crate) struct UdpUringActorHandle {
-    pub control_tx: mpsc::BoundedAsyncSender<UdpUringCommand>,
-    pub send_tx: Option<mpsc::BoundedAsyncSender<UdpSendRequest>>,
+    pub control_tx: mpsc::BoundedSender<UdpUringCommand>,
+    pub send_tx: Option<mpsc::BoundedSender<UdpSendRequest>>,
     pub event_fd: eventfd::EventFD,
     pub join_handle: std::thread::JoinHandle<Result<(), ZmqError>>,
 }
@@ -319,6 +318,8 @@ impl UdpUringActor {
         let bgid = self.recv_bgid
             .ok_or(ZmqError::InvalidState("No buffer ring configured"))?;
 
+        let ud = self.next_ud();
+
         let ctx = self.recv_msghdr.as_mut()
             .ok_or(ZmqError::InvalidState("RecvMsgContext not initialized"))?;
 
@@ -330,8 +331,6 @@ impl UdpUringActor {
         ctx.msghdr.msg_iov = std::ptr::null_mut();
         ctx.msghdr.msg_iovlen = 0;
 
-        let ud = self.next_ud();
-        
         let mut sqe = RecvMsg::new(
             Fd(self.socket_fd),
             &mut ctx.msghdr as *mut libc::msghdr,
@@ -339,7 +338,6 @@ impl UdpUringActor {
         .buf_group(bgid)
         .build()
         .flags(SqeFlags::BUFFER_SELECT)
-        .ioprio(IORING_RECV_MULTISHOT)
         .user_data(ud);
 
         self.pending_ops.insert(ud, UdpUringOpType::RecvMsgMultishot);
@@ -362,6 +360,8 @@ impl UdpUringActor {
         let bgid = self.recv_bgid
             .ok_or(ZmqError::InvalidState("No buffer ring configured"))?;
 
+        let ud = self.next_ud();
+
         let ctx = self.recv_msghdr.as_mut()
             .ok_or(ZmqError::InvalidState("RecvMsgContext not initialized"))?;
 
@@ -373,8 +373,6 @@ impl UdpUringActor {
         ctx.msghdr.msg_iov = std::ptr::null_mut();
         ctx.msghdr.msg_iovlen = 0;
 
-        let ud = self.next_ud();
-        
         let sqe = RecvMsg::new(
             Fd(self.socket_fd),
             &mut ctx.msghdr as *mut libc::msghdr,
@@ -405,12 +403,14 @@ impl UdpUringActor {
                 UdpUringActorState::Running => {
                     let work_available = self.gather_work();
                     
-                    let mut sq = unsafe { self.ring.submission_shared() };
-                    if !sq.is_empty() {
-                        drop(sq);
-                        self.ring.submit().map_err(|e| {
-                            ZmqError::Internal(format!("io_uring submit failed: {}", e))
-                        })?;
+                    {
+                        let mut sq = unsafe { self.ring.submission_shared() };
+                        if !sq.is_empty() {
+                            drop(sq);
+                            self.ring.submit().map_err(|e| {
+                                ZmqError::Internal(format!("io_uring submit failed: {}", e))
+                            })?;
+                        }
                     }
 
                     if !work_available && self.pending_ops.is_empty() {
@@ -420,12 +420,14 @@ impl UdpUringActor {
                     self.process_cqes();
                 }
                 UdpUringActorState::Draining => {
-                    let mut sq = unsafe { self.ring.submission_shared() };
-                    if !sq.is_empty() {
-                        drop(sq);
-                        self.ring.submit().map_err(|e| {
-                            ZmqError::Internal(format!("io_uring submit failed: {}", e))
-                        })?;
+                    {
+                        let mut sq = unsafe { self.ring.submission_shared() };
+                        if !sq.is_empty() {
+                            drop(sq);
+                            self.ring.submit().map_err(|e| {
+                                ZmqError::Internal(format!("io_uring submit failed: {}", e))
+                            })?;
+                        }
                     }
 
                     self.process_cqes();
@@ -464,16 +466,20 @@ impl UdpUringActor {
 
         if let Some(ref send_rx) = self.send_rx {
             let mut batch_count = 0;
+            let mut requests = Vec::new();
             while let Ok(req) = send_rx.try_recv() {
-                if self.send_zerocopy_enabled {
-                    self.queue_sendmsg_zc(req);
-                } else {
-                    self.queue_sendmsg(req);
-                }
+                requests.push(req);
                 batch_count += 1;
                 work_available = true;
                 if batch_count >= 64 {
                     break;
+                }
+            }
+            for req in requests {
+                if self.send_zerocopy_enabled {
+                    self.queue_sendmsg_zc(req);
+                } else {
+                    self.queue_sendmsg(req);
                 }
             }
         }
@@ -496,14 +502,18 @@ impl UdpUringActor {
     }
 
     fn process_cqes(&mut self) {
-        let cq = unsafe { self.ring.completion_shared() };
-        cq.sync();
+        let cqe_list = {
+            let mut cq = unsafe { self.ring.completion_shared() };
+            cq.sync();
 
-        for cqe in cq {
-            let ud = cqe.user_data();
-            let result = cqe.result();
-            let flags = cqe.flags();
+            let mut list = Vec::new();
+            for cqe in &mut cq {
+                list.push((cqe.user_data(), cqe.result(), cqe.flags()));
+            }
+            list
+        };
 
+        for (ud, result, flags) in cqe_list {
             if ud == self.eventfd_poll_ud {
                 self.handle_eventfd_cqe(result);
                 continue;
@@ -663,8 +673,7 @@ impl UdpUringActor {
             return;
         }
 
-        let mut buf = [0u8; 8];
-        if let Ok(_) = self.event_fd.read(&mut buf) {
+        if let Ok(_) = self.event_fd.read() {
             tracing::trace!("UdpUringActor: eventfd wakeup received");
         }
 

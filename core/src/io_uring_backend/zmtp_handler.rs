@@ -6,19 +6,19 @@ use crate::io_uring_backend::connection_handler::{
   HandlerIoOps, HandlerSqeBlueprint, HandlerUpstreamEvent, ProtocolHandlerFactory,
   UringConnectionHandler, UringWorkerInterface, UserData, WorkerIoConfig,
 };
-use crate::io_uring_backend::ops::{HANDLER_INTERNAL_SEND_OP_UD, ProtocolConfig};
+use crate::io_uring_backend::ops::{ProtocolConfig, HANDLER_INTERNAL_SEND_OP_UD};
 use crate::io_uring_backend::worker::MultishotReader;
 use crate::message::{Msg, MsgFlags};
 use crate::protocol::zmtp::{
   command::{ZmtpCommand, ZmtpReady},
-  greeting::{GREETING_LENGTH, MECHANISM_LENGTH, ZmtpGreeting},
+  greeting::{ZmtpGreeting, GREETING_LENGTH, MECHANISM_LENGTH},
   manual_parser::ZmtpManualParser,
 };
+use crate::security::framer::{ISecureFramer, NullFramer};
 #[cfg(feature = "noise_xx")]
 use crate::security::NoiseXxMechanism;
-use crate::security::framer::{ISecureFramer, NullFramer};
 use crate::security::{
-  IDataCipher, Mechanism, NullMechanism, PlainMechanism, negotiate_security_mechanism,
+  negotiate_security_mechanism, IDataCipher, Mechanism, NullMechanism, PlainMechanism,
 };
 use crate::socket::options::ZmtpEngineConfig;
 use crate::{Blob, ZmqError};
@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bytes::{BufMut, Bytes, BytesMut};
+#[cfg(feature = "curve")]
 use dryoc::types::Bytes as DryocBytes;
 use tokio_util::codec::Encoder;
 use tracing::{debug, error, info, trace, warn};

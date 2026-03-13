@@ -15,7 +15,7 @@ use fibre::mpsc;
 use fibre::TrySendError;
 
 pub(crate) struct UdpUringSendConnection {
-    send_tx: mpsc::BoundedAsyncSender<crate::io_uring_backend::udp_uring_actor::UdpSendRequest>,
+    send_tx: mpsc::BoundedSender<crate::io_uring_backend::udp_uring_actor::UdpSendRequest>,
     event_fd: eventfd::EventFD,
     send_addr: SocketAddr,
     connection_id: usize,
@@ -23,7 +23,7 @@ pub(crate) struct UdpUringSendConnection {
 
 impl UdpUringSendConnection {
     pub(crate) fn new(
-        send_tx: mpsc::BoundedAsyncSender<crate::io_uring_backend::udp_uring_actor::UdpSendRequest>,
+        send_tx: mpsc::BoundedSender<crate::io_uring_backend::udp_uring_actor::UdpSendRequest>,
         event_fd: eventfd::EventFD,
         send_addr: SocketAddr,
         connection_id: usize,

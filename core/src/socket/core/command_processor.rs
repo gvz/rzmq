@@ -1219,9 +1219,7 @@ async fn handle_radio_bind_uring(
     eventfd::EfdFlags::EFD_CLOEXEC | eventfd::EfdFlags::EFD_NONBLOCK,
   )?;
 
-  let send_addr: SocketAddr = udp_ep.send_addr.ok_or_else(|| {
-    ZmqError::InvalidState("Radio bind requires send_addr".to_string())
-  })?;
+  let send_addr: SocketAddr = udp_ep.send_addr;
 
   let actor_config = UdpUringActorConfig {
     handle: actor_handle,

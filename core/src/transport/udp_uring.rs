@@ -199,10 +199,10 @@ pub(crate) fn create_recv_raw_udp_socket(
   Ok((fd, resolved_uri))
 }
 
-fn resolve_iface_to_ipv4(iface: &Option<String>) -> Result<Ipv4Addr, ZmqError> {
+fn resolve_iface_to_ipv4(iface: &String) -> Result<Ipv4Addr, ZmqError> {
   Ok(Ipv4Addr::new(0, 0, 0, 0))
 }
 
-fn resolve_iface_to_index(iface: &Option<String>) -> Result<u32, ZmqError> {
+fn resolve_iface_to_index(iface: &String) -> Result<u32, ZmqError> {
   Ok(0)
 }
