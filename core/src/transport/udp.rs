@@ -25,6 +25,9 @@ pub(crate) struct UdpReceiveActor {
   pipe_read_id: usize,
   mailbox_receiver: MailboxReceiver,
   context: Context,
+  /// Tracks whether peer discovery has already been reported for this pipe,
+  /// so we can skip the async vtable call on the hot recv path.
+  peer_discovered: bool,
 }
 
 impl UdpReceiveActor {
@@ -138,6 +141,7 @@ impl UdpReceiveActor {
       pipe_read_id,
       mailbox_receiver: rx,
       context: context.clone(),
+      peer_discovered: false,
     };
 
     let task = tokio::spawn(actor.run());
@@ -161,14 +165,20 @@ impl UdpReceiveActor {
           // Incoming datagram
           result = self.socket.recv_from(&mut buf) => {
               match result {
-                  Ok((len, _src)) => {
-                      let datagram = &buf[..len];
-                      if datagram.is_empty() {
+                  Ok((len, src)) => {
+                      if len == 0 {
                           warn!(handle = self.handle, "UDP: empty datagram, skipping");
                           continue;
                       }
-                      // Build Msg from raw datagram bytes
-                      let msg = crate::message::Msg::from_vec(datagram.to_vec());
+                      // Build Msg directly from the receive buffer — one allocation, no extra copy.
+                      let msg = crate::message::Msg::from_vec(buf[..len].to_vec());
+                      tracing::trace!(handle = self.handle, src = %src, len, "UdpReceiveActor: received datagram");
+                      // Only call handle_udp_peer_discovered once per source address.
+                      if !self.peer_discovered {
+                        let peer_addr = format!("udp://{}", src);
+                        self.socket_logic.handle_udp_peer_discovered(self.pipe_read_id, peer_addr).await;
+                        self.peer_discovered = true;
+                      }
                       let cmd = Command::PipeMessageReceived {
                           pipe_id: self.pipe_read_id,
                           msg,

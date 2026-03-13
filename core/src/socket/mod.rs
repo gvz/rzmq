@@ -177,6 +177,12 @@ pub trait ISocket: Send + Sync + 'static {
   async fn handle_pipe_event(&self, pipe_id: usize, event_command: Command)
   -> Result<(), ZmqError>;
 
+  /// Called by UDP transport when a new peer is discovered from an incoming packet.
+  /// This allows RADIO socket to learn the peer's address for sending replies.
+  /// Default implementation does nothing.
+  #[cfg(feature = "udp")]
+  async fn handle_udp_peer_discovered(&self, _pipe_id: usize, _peer_addr: String) {}
+
   /// Called by `SocketCore` when a new connection (represented by a pair of data pipes)
   /// is successfully established and attached to this socket.
   /// This allows the pattern-specific logic (e.g., a `LoadBalancer` or `RouterMap`)

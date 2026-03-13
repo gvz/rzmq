@@ -53,6 +53,15 @@ impl DishSocket {
       .map(|ep| ep.connection_iface.clone())
   }
 
+  fn get_connection_by_target(&self, target_uri: &str) -> Option<Arc<dyn ISocketConnection>> {
+    let state = self.core_state_read();
+    state
+      .endpoints
+      .iter()
+      .find(|(_, ep)| ep.target_endpoint_uri.as_deref() == Some(target_uri))
+      .map(|(_, ep)| ep.connection_iface.clone())
+  }
+
   async fn send_group_command_to_peer(
     &self,
     conn: &Arc<dyn ISocketConnection>,
@@ -65,27 +74,43 @@ impl DishSocket {
     } else {
       ZmtpCommand::create_leave(group)
     };
-    if let Err(e) = conn.send_message(cmd_msg).await {
-      tracing::warn!(
+    match conn.send_message(cmd_msg).await {
+      Ok(()) => {
+        tracing::debug!(
           handle = self.core.handle,
           uri,
           is_join,
           group = ?String::from_utf8_lossy(group),
-          error = %e,
-          "DISH: failed to send group command to peer"
-      );
+          "DISH: sent group command to peer"
+        );
+      }
+      Err(e) => {
+        tracing::warn!(
+            handle = self.core.handle,
+            uri,
+            is_join,
+            group = ?String::from_utf8_lossy(group),
+            error = %e,
+            "DISH: failed to send group command to peer"
+        );
+      }
     }
   }
 
   async fn send_group_command_to_all(&self, is_join: bool, group: &[u8]) {
-    let peer_uris: Vec<String> = self
-      .pipe_read_to_endpoint_uri
-      .read()
-      .values()
-      .cloned()
-      .collect();
+    let endpoint_uris: Vec<String> = {
+      let state = self.core_state_read();
+      state
+        .endpoints
+        .iter()
+        .filter(|(_, ep)| {
+          ep.endpoint_uri.starts_with("udp://") && ep.target_endpoint_uri.as_deref() == Some(&ep.endpoint_uri)
+        })
+        .map(|(uri, _)| uri.clone())
+        .collect()
+    };
 
-    for uri in peer_uris {
+    for uri in endpoint_uris {
       if let Some(conn) = self.get_connection(&uri) {
         self
           .send_group_command_to_peer(&conn, &uri, is_join, group)
@@ -322,19 +347,35 @@ impl ISocket for DishSocket {
         .write()
         .insert(pipe_read_id, endpoint_uri.clone());
 
+      let target_uri_option = {
+        let state = self.core_state_read();
+        state
+          .endpoints
+          .get(&endpoint_uri)
+          .and_then(|ep| ep.target_endpoint_uri.clone())
+      };
+
       let current_groups: Vec<Bytes> = self.joined_groups.read().iter().cloned().collect();
       if !current_groups.is_empty() {
-        if let Some(conn) = self.get_connection(&endpoint_uri) {
-          for group in current_groups {
-            self
-              .send_group_command_to_peer(&conn, &endpoint_uri, true, &group)
-              .await;
+        if let Some(target_uri) = target_uri_option {
+          if let Some(conn) = self.get_connection(&target_uri) {
+            for group in current_groups {
+              self
+                .send_group_command_to_peer(&conn, &target_uri, true, &group)
+                .await;
+            }
+          } else {
+            tracing::warn!(
+                handle = self.core.handle,
+                target_uri = %target_uri,
+                "DISH pipe_attached: Connection interface not found for target URI. Skipping group sync."
+            );
           }
         } else {
           tracing::warn!(
               handle = self.core.handle,
               uri = %endpoint_uri,
-              "DISH pipe_attached: Connection interface not found for URI. Skipping group sync."
+              "DISH pipe_attached: Target endpoint URI not found. Skipping group sync."
           );
         }
       }

@@ -24,7 +24,7 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
     Self {
       socket_core_handle: core_handle,
       main_incoming_queue: FairQueue::new(rcvhwm.max(1)),
-      queue_push_timeout: Some(Duration::from_millis(1000)),
+      queue_push_timeout: Some(Duration::ZERO),
       partial_pipe_messages: DashMap::new(),
       current_recv_frames_buffer: TokioMutex::new(VecDeque::new()),
     }

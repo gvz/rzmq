@@ -22,6 +22,7 @@ pub(crate) struct RadioSocket {
   core: Arc<SocketCore>,
   distributor: Distributor,
   pipe_read_to_endpoint_uri: RwLock<HashMap<usize, String>>,
+  discovered_peer_addrs: RwLock<HashMap<usize, String>>,
 }
 
 impl RadioSocket {
@@ -30,6 +31,7 @@ impl RadioSocket {
       core,
       distributor: Distributor::new(),
       pipe_read_to_endpoint_uri: RwLock::new(HashMap::new()),
+      discovered_peer_addrs: RwLock::new(HashMap::new()),
     }
   }
 
@@ -107,6 +109,7 @@ impl ISocket for RadioSocket {
     {
       Ok(()) => Ok(()),
       Err(failed_uris_with_errors) => {
+        let first_error = failed_uris_with_errors.first().map(|(_, e)| e.clone());
         for (uri, error_detail) in failed_uris_with_errors {
           tracing::debug!(
               handle = self.core.handle,
@@ -116,7 +119,11 @@ impl ISocket for RadioSocket {
           );
           self.distributor.remove_peer_uri(&uri);
         }
-        Ok(())
+        if let Some(error) = first_error {
+          Err(error)
+        } else {
+          Ok(())
+        }
       }
     }
   }
@@ -189,7 +196,44 @@ impl ISocket for RadioSocket {
         Ok(())
       }
       Command::PipeClosedByPeer { .. } => Ok(()),
-      _ => Ok(()),
+      _ => Ok(())
+    }
+  }
+
+  #[cfg(feature = "udp")]
+  async fn handle_udp_peer_discovered(&self, pipe_id: usize, peer_addr: String) {
+    tracing::debug!(
+      handle = self.core.handle,
+      pipe_id,
+      peer_addr = %peer_addr,
+      "RADIO discovered peer address from incoming packet"
+    );
+    
+    // Fast path: already discovered, avoid write lock entirely.
+    if self.discovered_peer_addrs.read().contains_key(&pipe_id) {
+      return;
+    }
+    let mut discovered = self.discovered_peer_addrs.write();
+    // Re-check under write lock (another task may have raced).
+    if !discovered.contains_key(&pipe_id) {
+      discovered.insert(pipe_id, peer_addr.clone());
+      
+      let old_uri = self.pipe_read_to_endpoint_uri.read().get(&pipe_id).cloned();
+      
+      self.pipe_read_to_endpoint_uri.write().insert(pipe_id, peer_addr.clone());
+      self.distributor.add_peer_uri(peer_addr.clone());
+      
+      if let Some(old) = old_uri {
+        if old != peer_addr {
+          tracing::debug!(
+            handle = self.core.handle,
+            old_uri = %old,
+            new_uri = %peer_addr,
+            "RADIO updating peer URI to discovered address"
+          );
+          self.distributor.remove_peer_uri(&old);
+        }
+      }
     }
   }
 
@@ -241,6 +285,7 @@ impl ISocket for RadioSocket {
     );
 
     let maybe_endpoint_uri = self.pipe_read_to_endpoint_uri.write().remove(&pipe_read_id);
+    self.discovered_peer_addrs.write().remove(&pipe_read_id);
 
     if let Some(endpoint_uri) = maybe_endpoint_uri {
       self.distributor.remove_peer_uri(&endpoint_uri);

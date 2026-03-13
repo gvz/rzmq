@@ -808,6 +808,44 @@ async fn handle_user_connect(
                 );
               }
 
+              match udp::create_connected_send_socket(udp_ep, &options) {
+                Ok(udp_sock) => {
+                  let send_conn_id = context_clone.inner().next_handle();
+                  let udp_arc = Arc::new(udp_sock);
+                  let target_uri = format!("udp://{}", udp_ep.send_addr);
+
+                  let send_conn: Arc<dyn ISocketConnection> = Arc::new(
+                    crate::socket::connection_iface::UdpSendConnection::new(
+                      udp_arc,
+                      udp_ep.send_addr,
+                      send_conn_id,
+                    ),
+                  );
+
+                  {
+                    let mut cs = core_arc.core_state.write();
+                    cs.endpoints.insert(
+                      target_uri.clone(),
+                      EndpointInfo {
+                        mailbox: core_arc.command_sender(),
+                        task_handle: None,
+                        endpoint_type: EndpointType::Session,
+                        endpoint_uri: target_uri.clone(),
+                        pipe_ids: None,
+                        handle_id: send_conn_id,
+                        target_endpoint_uri: Some(uri.clone()),
+                        is_outbound_connection: true,
+                        peer_socket_type: None,
+                        connection_iface: send_conn,
+                      },
+                    );
+                  }
+                }
+                Err(e) => {
+                  tracing::warn!(handle = parent_socket_id, %e, "DISH connect: failed to create send socket");
+                }
+              }
+
               socket_logic.pipe_attached(pipe_read_id, pipe_write_id, None).await;
 
               if let Some(ref mtx) = monitor_tx {
@@ -1229,7 +1267,7 @@ async fn handle_radio_bind_uring(
     recv_buffer_count: 32,
     recv_buffer_size: 65536,
     pipe_read_id,
-    socket_logic: None,
+    socket_logic: Some(socket_logic.clone()),
     send_addr: Some(send_addr),
     send_zerocopy: options.udp_uring.send_zerocopy,
     send_channel_capacity: 1024,

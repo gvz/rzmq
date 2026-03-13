@@ -635,6 +635,12 @@ impl UdpUringActor {
             return;
         }
 
+        let peer_addr = self.extract_peer_addr_from_buf(buf_slice, namelen);
+        if let Some(peer_addr) = peer_addr {
+            let peer_addr_str = format!("udp://{}", peer_addr);
+            self.notify_peer_discovered(peer_addr_str);
+        }
+
         let msg = Msg::from_vec(datagram.to_vec());
         let cmd = Command::PipeMessageReceived {
             pipe_id: self.pipe_read_id,
@@ -662,6 +668,73 @@ impl UdpUringActor {
                     if let Err(e) = socket_logic.handle_pipe_event(pipe_read_id, cmd).await {
                         tracing::error!(handle = handle, "handle_pipe_event error: {}", e);
                     }
+                });
+            });
+        }
+    }
+
+    fn extract_peer_addr_from_buf(&self, buf_slice: &[u8], namelen: usize) -> Option<SocketAddr> {
+        if namelen == 0 || namelen > buf_slice.len().saturating_sub(16) {
+            return None;
+        }
+
+        let name_start = 16;
+        let name_end = name_start + namelen;
+        if name_end > buf_slice.len() {
+            return None;
+        }
+
+        let name_data = &buf_slice[name_start..name_end];
+        
+        let sockaddr: &libc::sockaddr = unsafe { &*(name_data.as_ptr() as *const libc::sockaddr) };
+        
+        match sockaddr.sa_family as libc::c_int {
+            libc::AF_INET => {
+                if namelen >= std::mem::size_of::<libc::sockaddr_in>() {
+                    let addr_in: &libc::sockaddr_in = unsafe { &*(sockaddr as *const _ as *const libc::sockaddr_in) };
+                    let port = u16::from_be(addr_in.sin_port);
+                    let ip_bytes = addr_in.sin_addr.s_addr.to_ne_bytes();
+                    let ip = std::net::Ipv4Addr::new(ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
+                    Some(SocketAddr::new(std::net::IpAddr::V4(ip), port))
+                } else {
+                    None
+                }
+            }
+            libc::AF_INET6 => {
+                if namelen >= std::mem::size_of::<libc::sockaddr_in6>() {
+                    let addr_in6: &libc::sockaddr_in6 = unsafe { &*(sockaddr as *const _ as *const libc::sockaddr_in6) };
+                    let port = u16::from_be(addr_in6.sin6_port);
+                    let ip_bytes = addr_in6.sin6_addr.s6_addr;
+                    let ip = std::net::Ipv6Addr::new(
+                        u16::from_be_bytes([ip_bytes[0], ip_bytes[1]]),
+                        u16::from_be_bytes([ip_bytes[2], ip_bytes[3]]),
+                        u16::from_be_bytes([ip_bytes[4], ip_bytes[5]]),
+                        u16::from_be_bytes([ip_bytes[6], ip_bytes[7]]),
+                        u16::from_be_bytes([ip_bytes[8], ip_bytes[9]]),
+                        u16::from_be_bytes([ip_bytes[10], ip_bytes[11]]),
+                        u16::from_be_bytes([ip_bytes[12], ip_bytes[13]]),
+                        u16::from_be_bytes([ip_bytes[14], ip_bytes[15]]),
+                    );
+                    Some(SocketAddr::new(std::net::IpAddr::V6(ip), port))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn notify_peer_discovered(&self, peer_addr: String) {
+        if let Some(ref socket_logic) = self.socket_logic {
+            let socket_logic = socket_logic.clone();
+            let pipe_read_id = self.pipe_read_id;
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async {
+                    socket_logic.handle_udp_peer_discovered(pipe_read_id, peer_addr).await;
                 });
             });
         }

@@ -713,9 +713,9 @@ pub(crate) fn retrieve_core_option_value(
         UDP_MULTICAST_HOPS => Ok((options.udp.multicast_hops as i32).to_ne_bytes().to_vec()),
 
         #[cfg(all(feature = "udp", feature = "io-uring"))]
-        IO_URING_UDP_ENABLED => Ok((options.udp_uring.enabled as i32).to_ne_bytes().to_vec()),
+        IO_URING_UDP_ENABLED => Ok(vec![if options.udp_uring.enabled { 1 } else { 0 }]),
         #[cfg(all(feature = "udp", feature = "io-uring"))]
-        IO_URING_UDP_SNDZEROCOPY => Ok((options.udp_uring.send_zerocopy as i32).to_ne_bytes().to_vec()),
+        IO_URING_UDP_SNDZEROCOPY => Ok(vec![if options.udp_uring.send_zerocopy { 1 } else { 0 }]),
 
         // Options handled by pattern logic or read-only by nature
         16 /* ZMQ_TYPE */ => Ok((core_s_reader.socket_type as i32).to_ne_bytes().to_vec()),

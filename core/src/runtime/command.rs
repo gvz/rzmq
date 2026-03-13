@@ -1,8 +1,8 @@
-#[cfg(feature = "io-uring")]
-use crate::Blob;
 use crate::error::ZmqError;
 use crate::message::Msg;
 use crate::socket::MonitorSender;
+#[cfg(feature = "io-uring")]
+use crate::Blob;
 
 #[cfg(feature = "io-uring")]
 use std::os::unix::io::RawFd;
