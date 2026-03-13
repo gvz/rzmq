@@ -16,6 +16,8 @@ use crate::transport::inproc;
 #[cfg(feature = "ipc")]
 use crate::transport::ipc::{IpcConnecter, IpcListener};
 use crate::transport::tcp::{TcpConnecter, TcpListener};
+#[cfg(feature = "udp")]
+use crate::transport::udp;
 
 use fibre::oneshot;
 use std::sync::Arc;
@@ -343,6 +345,18 @@ pub(crate) async fn process_socket_command(
   Ok(())
 }
 
+#[cfg(feature = "udp")]
+fn udp_socket_type_check(socket_type: crate::socket::SocketType, uri: &str) -> Result<(), ZmqError> {
+  use crate::socket::SocketType;
+  match socket_type {
+    SocketType::Radio | SocketType::Dish => Ok(()),
+    _ => Err(ZmqError::UnsupportedTransport(format!(
+      "udp:// is only valid for Radio and Dish sockets, got {:?} on {}",
+      socket_type, uri
+    ))),
+  }
+}
+
 async fn handle_user_bind(
   core_arc: Arc<SocketCore>,
   socket_logic: Arc<dyn ISocket>,
@@ -486,6 +500,130 @@ async fn handle_user_bind(
         }
       }
     }
+
+    #[cfg(feature = "udp")]
+    Ok(Endpoint::Udp(ref udp_ep, ref uri)) => {
+      use crate::socket::SocketType;
+      use crate::socket::connection_iface::DummyConnection;
+
+      let socket_type = core_arc.core_state.read().socket_type;
+      if let Err(e) = udp_socket_type_check(socket_type, uri) {
+        bind_result = Err(e);
+      }
+      else if core_arc.core_state.read().endpoints.contains_key(uri) {
+        bind_result = Err(ZmqError::AddrInUse(uri.clone()));
+      }
+      else {
+        let options = core_arc.core_state.read().options.clone();
+        let monitor_tx = core_arc.core_state.read().get_monitor_sender_clone();
+
+        match socket_type {
+          SocketType::Radio => {
+            match udp::create_bound_send_socket(udp_ep, &options) {
+              Ok((udp_sock, resolved_uri)) => {
+                let conn_id = context_clone.inner().next_handle();
+                let udp_arc = Arc::new(udp_sock);
+                let conn: Arc<dyn ISocketConnection> = Arc::new(
+                  crate::socket::connection_iface::UdpSendConnection::new(
+                    udp_arc,
+                    udp_ep.send_addr,
+                    conn_id,
+                  )
+                );
+
+                let pipe_write_id = context_clone.inner().next_handle();
+                let pipe_read_id  = context_clone.inner().next_handle();
+
+                {
+                  let mut cs = core_arc.core_state.write();
+                  cs.pipe_read_id_to_endpoint_uri
+                    .insert(pipe_read_id, resolved_uri.clone());
+                  cs.endpoints.insert(
+                    resolved_uri.clone(),
+                    EndpointInfo {
+                      mailbox: core_arc.command_sender(),
+                      task_handle: None,
+                      endpoint_type: EndpointType::Session,
+                      endpoint_uri: resolved_uri.clone(),
+                      pipe_ids: Some((pipe_write_id, pipe_read_id)),
+                      handle_id: conn_id,
+                      target_endpoint_uri: None,
+                      is_outbound_connection: false,
+                      peer_socket_type: None,
+                      connection_iface: conn,
+                    },
+                  );
+                }
+
+                socket_logic.pipe_attached(pipe_read_id, pipe_write_id, None).await;
+
+                if let Some(ref mtx) = monitor_tx {
+                  let _ = mtx.try_send(SocketEvent::Listening {
+                    endpoint: resolved_uri.clone(),
+                  });
+                }
+
+                actual_uri_for_state_update = Some(resolved_uri);
+                bind_result = Ok(());
+              }
+              Err(e) => bind_result = Err(e),
+            }
+          }
+
+          SocketType::Dish => {
+            let child_handle = context_clone.inner().next_handle();
+            let pipe_read_id = context_clone.inner().next_handle();
+            let pipe_write_id = context_clone.inner().next_handle();
+
+            match udp::UdpReceiveActor::create_and_spawn(
+              child_handle,
+              udp_ep,
+              socket_logic.clone(),
+              context_clone.clone(),
+              parent_socket_id,
+              monitor_tx.clone(),
+              core_arc.clone(),
+              pipe_read_id,
+              &options,
+            ) {
+              Ok((actor_mailbox, task_handle, resolved_uri)) => {
+                let conn: Arc<dyn ISocketConnection> = Arc::new(DummyConnection);
+
+                {
+                  let mut cs = core_arc.core_state.write();
+                  cs.pipe_read_id_to_endpoint_uri
+                    .insert(pipe_read_id, resolved_uri.clone());
+                  cs.endpoints.insert(
+                    resolved_uri.clone(),
+                    EndpointInfo {
+                      mailbox: actor_mailbox,
+                      task_handle: Some(task_handle),
+                      endpoint_type: EndpointType::Listener,
+                      endpoint_uri: resolved_uri.clone(),
+                      pipe_ids: Some((pipe_write_id, pipe_read_id)),
+                      handle_id: child_handle,
+                      target_endpoint_uri: None,
+                      is_outbound_connection: false,
+                      peer_socket_type: None,
+                      connection_iface: conn,
+                    },
+                  );
+                }
+
+                socket_logic.pipe_attached(pipe_read_id, pipe_write_id, None).await;
+
+                actual_uri_for_state_update = Some(resolved_uri);
+                bind_result = Ok(());
+              }
+              Err(e) => bind_result = Err(e),
+            }
+          }
+
+          _ => unreachable!("type check above ensures only Radio/Dish reach here"),
+        }
+      }
+    }
+
     Err(e) => bind_result = Err(e), // Error from parse_endpoint
     _ => bind_result = Err(ZmqError::UnsupportedTransport(endpoint.to_string())),
   };
@@ -548,6 +686,149 @@ async fn handle_user_connect(
         inproc::connect_inproc(name_clone_for_task, core_arc_clone_for_task, reply_tx).await;
       });
     }
+
+    #[cfg(feature = "udp")]
+    Ok(Endpoint::Udp(ref udp_ep, ref uri)) => {
+      use crate::socket::SocketType;
+      use crate::socket::connection_iface::DummyConnection;
+
+      let socket_type = core_arc.core_state.read().socket_type;
+      if let Err(e) = udp_socket_type_check(socket_type, uri) {
+        let _ = reply_tx.send(Err(e));
+        return;
+      }
+
+      if core_arc.core_state.read().endpoints.contains_key(uri) {
+        let _ = reply_tx.send(Err(ZmqError::AddrInUse(uri.clone())));
+        return;
+      }
+
+      let options = core_arc.core_state.read().options.clone();
+      let monitor_tx = core_arc.core_state.read().get_monitor_sender_clone();
+      let context_clone = core_arc.context.clone();
+      let parent_socket_id = core_arc.handle;
+
+      match socket_type {
+        SocketType::Radio => {
+          match udp::create_connected_send_socket(udp_ep, &options) {
+            Ok(udp_sock) => {
+              let conn_id = context_clone.inner().next_handle();
+              let udp_arc = Arc::new(udp_sock);
+              let resolved_uri = format!("udp://{}", udp_ep.send_addr);
+
+              let conn: Arc<dyn ISocketConnection> = Arc::new(
+                crate::socket::connection_iface::UdpSendConnection::new(udp_arc, udp_ep.send_addr, conn_id)
+              );
+
+              let pipe_write_id = context_clone.inner().next_handle();
+              let pipe_read_id  = context_clone.inner().next_handle();
+
+              {
+                let mut cs = core_arc.core_state.write();
+                cs.pipe_read_id_to_endpoint_uri
+                  .insert(pipe_read_id, resolved_uri.clone());
+                cs.endpoints.insert(
+                  resolved_uri.clone(),
+                  EndpointInfo {
+                    mailbox: core_arc.command_sender(),
+                    task_handle: None,
+                    endpoint_type: EndpointType::Session,
+                    endpoint_uri: resolved_uri.clone(),
+                    pipe_ids: Some((pipe_write_id, pipe_read_id)),
+                    handle_id: conn_id,
+                    target_endpoint_uri: Some(uri.clone()),
+                    is_outbound_connection: true,
+                    peer_socket_type: None,
+                    connection_iface: conn,
+                  },
+                );
+              }
+
+              socket_logic.pipe_attached(pipe_read_id, pipe_write_id, None).await;
+
+              if let Some(ref mtx) = monitor_tx {
+                let _ = mtx.try_send(SocketEvent::Connected {
+                  endpoint: resolved_uri.clone(),
+                  peer_addr: udp_ep.send_addr.to_string(),
+                });
+              }
+
+              let _ = reply_tx.send(Ok(()));
+            }
+            Err(e) => {
+              let _ = reply_tx.send(Err(e));
+            }
+          }
+        }
+
+        SocketType::Dish => {
+          let child_handle = context_clone.inner().next_handle();
+          let pipe_read_id  = context_clone.inner().next_handle();
+          let pipe_write_id = context_clone.inner().next_handle();
+
+          let mut connect_ep = udp_ep.clone();
+          connect_ep.bind_addr = if udp_ep.is_ipv6 {
+            "[::]:0".parse().unwrap()
+          } else {
+            "0.0.0.0:0".parse().unwrap()
+          };
+
+          match udp::UdpReceiveActor::create_and_spawn(
+            child_handle,
+            &connect_ep,
+            socket_logic.clone(),
+            context_clone.clone(),
+            parent_socket_id,
+            monitor_tx.clone(),
+            core_arc.clone(),
+            pipe_read_id,
+            &options,
+          ) {
+            Ok((actor_mailbox, task_handle, resolved_uri)) => {
+              let conn: Arc<dyn ISocketConnection> = Arc::new(DummyConnection);
+
+              {
+                let mut cs = core_arc.core_state.write();
+                cs.pipe_read_id_to_endpoint_uri
+                  .insert(pipe_read_id, resolved_uri.clone());
+                cs.endpoints.insert(
+                  resolved_uri.clone(),
+                  EndpointInfo {
+                    mailbox: actor_mailbox,
+                    task_handle: Some(task_handle),
+                    endpoint_type: EndpointType::Session,
+                    endpoint_uri: resolved_uri.clone(),
+                    pipe_ids: Some((pipe_write_id, pipe_read_id)),
+                    handle_id: child_handle,
+                    target_endpoint_uri: Some(uri.clone()),
+                    is_outbound_connection: true,
+                    peer_socket_type: None,
+                    connection_iface: conn,
+                  },
+                );
+              }
+
+              socket_logic.pipe_attached(pipe_read_id, pipe_write_id, None).await;
+
+              if let Some(ref mtx) = monitor_tx {
+                let _ = mtx.try_send(SocketEvent::Connected {
+                  endpoint: resolved_uri.clone(),
+                  peer_addr: udp_ep.send_addr.to_string(),
+                });
+              }
+
+              let _ = reply_tx.send(Ok(()));
+            }
+            Err(e) => {
+              let _ = reply_tx.send(Err(e));
+            }
+          }
+        }
+
+        _ => unreachable!(),
+      }
+    }
+
     Err(e) => {
       let _ = reply_tx.send(Err(e));
     }

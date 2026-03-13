@@ -10,6 +10,11 @@ pub mod signaling_op_sender;
 pub mod worker;
 pub mod zmtp_handler;
 
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+pub mod udp_uring_actor;
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+pub mod udp_send_connection;
+
 // Re-export key types for easier access from the ZMTP engine adapter that will use this backend
 pub use connection_handler::{ProtocolHandlerFactory, WorkerIoConfig};
 pub use ops::{UringOpCompletion, UringOpRequest, UserData}; // For registering protocol handlers

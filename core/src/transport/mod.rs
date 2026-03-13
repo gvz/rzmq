@@ -8,6 +8,8 @@ pub mod tcp;
 pub mod udp;
 #[cfg(feature = "udp")]
 pub mod udp_endpoint;
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+pub mod udp_uring;
 
 use std::os::fd::AsRawFd;
 

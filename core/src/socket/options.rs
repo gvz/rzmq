@@ -50,8 +50,8 @@ pub const PLAIN_PASSWORD: i32 = 46;
 pub const NOISE_XX_ENABLED: i32 = 1202; // Boolean (0 or 1)
 pub const NOISE_XX_STATIC_SECRET_KEY: i32 = 1200; // Expects 32-byte secret key
 pub const NOISE_XX_REMOTE_STATIC_PUBLIC_KEY: i32 = 1201; // Client uses this for server's PK, expects 32-byte public key
-// Optional: For server, a list of allowed client public keys (if not using ZAP for this)
-// pub const NOISE_XX_ALLOWED_PEERS: i32 = 1203; // Would take a list of PKs
+                                                         // Optional: For server, a list of allowed client public keys (if not using ZAP for this)
+                                                         // pub const NOISE_XX_ALLOWED_PEERS: i32 = 1203; // Would take a list of PKs
 
 // Security/CURVE
 pub const CURVE_SERVER: i32 = 47; // Matches libzmq's ZMQ_CURVE_SERVER
@@ -71,6 +71,17 @@ pub const IO_URING_RCVMULTISHOT: i32 = 1171;
 pub const TCP_CORK: i32 = 1172;
 
 pub const IO_URING_SESSION_ENABLED: i32 = 1175;
+
+// UDP io_uring Options
+/// Enable io_uring for UDP transport on this socket (Linux only).
+/// Must be set BEFORE bind()/connect(). Default: false.
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+pub const IO_URING_UDP_ENABLED: i32 = 1176;
+
+/// Enable zero-copy sendmsg for UDP io_uring (Linux only).
+/// Only effective when IO_URING_UDP_ENABLED is true. Default: false.
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+pub const IO_URING_UDP_SNDZEROCOPY: i32 = 1177;
 
 // UDP Options
 /// Enable/disable multicast loopback (IP_MULTICAST_LOOP / IPV6_MULTICAST_LOOP).
@@ -133,6 +144,8 @@ pub(crate) struct SocketOptions {
   pub noise_xx_options: NoiseXxSocketOptions,
   #[cfg(feature = "udp")]
   pub udp: UdpSocketOptions,
+  #[cfg(all(feature = "udp", feature = "io-uring"))]
+  pub udp_uring: UdpUringOptions,
 }
 
 impl Default for SocketOptions {
@@ -169,6 +182,8 @@ impl Default for SocketOptions {
       curve_options: CurveMechanismSocketOptions::default(),
       #[cfg(feature = "udp")]
       udp: Default::default(),
+      #[cfg(all(feature = "udp", feature = "io-uring"))]
+      udp_uring: Default::default(),
     }
   }
 }
@@ -244,6 +259,23 @@ impl Default for UdpSocketOptions {
     Self {
       multicast_loop: true, // OS default is enabled
       multicast_hops: 1,    // Same-subnet only by default
+    }
+  }
+}
+
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+#[derive(Debug, Clone)]
+pub struct UdpUringOptions {
+  pub enabled: bool,
+  pub send_zerocopy: bool,
+}
+
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+impl Default for UdpUringOptions {
+  fn default() -> Self {
+    Self {
+      enabled: false,
+      send_zerocopy: false,
     }
   }
 }
@@ -613,6 +645,12 @@ pub(crate) fn apply_core_option_value(
             options.udp.multicast_hops = v as u8;
         }
 
+        #[cfg(all(feature = "udp", feature = "io-uring"))]
+        IO_URING_UDP_ENABLED => options.udp_uring.enabled = parse_bool_option(value)?,
+
+        #[cfg(all(feature = "udp", feature = "io-uring"))]
+        IO_URING_UDP_SNDZEROCOPY => options.udp_uring.send_zerocopy = parse_bool_option(value)?,
+
         // Options handled by pattern logic (ISocket) or read-only, or not applicable for set_option
         SUBSCRIBE | UNSUBSCRIBE | LAST_ENDPOINT  /* Pattern specific */ | ROUTER_MANDATORY |
         AUTO_DELIMITER | 16 /* ZMQ_TYPE (read-only) */ => return Err(ZmqError::UnsupportedOption(option_id)),
@@ -673,6 +711,11 @@ pub(crate) fn retrieve_core_option_value(
         UDP_MULTICAST_LOOP => Ok((options.udp.multicast_loop as i32).to_ne_bytes().to_vec()),
         #[cfg(feature = "udp")]
         UDP_MULTICAST_HOPS => Ok((options.udp.multicast_hops as i32).to_ne_bytes().to_vec()),
+
+        #[cfg(all(feature = "udp", feature = "io-uring"))]
+        IO_URING_UDP_ENABLED => Ok((options.udp_uring.enabled as i32).to_ne_bytes().to_vec()),
+        #[cfg(all(feature = "udp", feature = "io-uring"))]
+        IO_URING_UDP_SNDZEROCOPY => Ok((options.udp_uring.send_zerocopy as i32).to_ne_bytes().to_vec()),
 
         // Options handled by pattern logic or read-only by nature
         16 /* ZMQ_TYPE */ => Ok((core_s_reader.socket_type as i32).to_ne_bytes().to_vec()),
