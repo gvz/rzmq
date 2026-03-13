@@ -149,3 +149,11 @@ required-features = ["plain"]
 [[test]]
 name = "udp_radio_dish"
 required-features = ["udp"]
+
+[[test]]
+name = "udp_iouring_radio_dish"
+required-features = ["udp", "io-uring"]
+
+[[bench]]
+name = "udp_throughput"
+required-features = ["udp", "io-uring"]

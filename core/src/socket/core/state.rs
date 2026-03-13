@@ -1,10 +1,10 @@
-use crate::Msg;
 use crate::runtime::MailboxSender;
-use crate::socket::SocketEvent;
 use crate::socket::connection_iface::ISocketConnection;
 use crate::socket::events::MonitorSender;
 use crate::socket::options::SocketOptions;
 use crate::socket::types::SocketType;
+use crate::socket::SocketEvent;
+use crate::Msg;
 
 use fibre::mpmc::AsyncSender;
 use std::collections::{HashMap, HashSet};
@@ -136,6 +136,10 @@ pub(crate) struct CoreState {
   pub(crate) bound_inproc_names: HashSet<String>,
   pub(crate) monitor_tx: Option<MonitorSender>,
   pub(crate) last_bound_endpoint: Option<String>,
+
+  #[cfg(all(feature = "udp", feature = "io-uring"))]
+  pub(crate) udp_uring_actors:
+    HashMap<String, crate::io_uring_backend::udp_uring_actor::UdpUringActorHandle>,
 }
 
 impl CoreState {
@@ -155,6 +159,8 @@ impl CoreState {
       bound_inproc_names: HashSet::new(),
       monitor_tx: None,
       last_bound_endpoint: None,
+      #[cfg(all(feature = "udp", feature = "io-uring"))]
+      udp_uring_actors: HashMap::new(),
     }
   }
 

@@ -14,6 +14,8 @@ pub mod zmtp_handler;
 pub mod udp_uring_actor;
 #[cfg(all(feature = "udp", feature = "io-uring"))]
 pub mod udp_send_connection;
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+pub mod udp_recv_delivery;
 
 // Re-export key types for easier access from the ZMTP engine adapter that will use this backend
 pub use connection_handler::{ProtocolHandlerFactory, WorkerIoConfig};

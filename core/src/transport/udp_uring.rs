@@ -7,7 +7,7 @@ use crate::transport::udp_endpoint::{UdpEndpoint, UdpMode};
 
 use socket2::{Domain, Protocol, Socket as Socket2, Type};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{IntoRawFd, RawFd};
 
 pub(crate) fn create_bound_raw_udp_socket(
   endpoint: &UdpEndpoint,

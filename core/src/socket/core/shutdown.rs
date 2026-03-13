@@ -229,6 +229,17 @@ pub(crate) async fn initiate_core_shutdown(
 
   let child_actors_to_stop = coordinator.pending_child_actors.clone();
   let connections_to_close = coordinator.pending_connections_to_close.clone();
+  
+  #[cfg(all(feature = "udp", feature = "io-uring"))]
+  let udp_uring_actors_to_stop = {
+    let mut core_state = core_arc.core_state.write();
+    let actors: Vec<(String, crate::io_uring_backend::udp_uring_actor::UdpUringActorHandle)> =
+        core_state.udp_uring_actors.drain().collect();
+    actors
+  };
+  #[cfg(not(all(feature = "udp", feature = "io-uring")))]
+  let udp_uring_actors_to_stop: Vec<(String, ())> = Vec::new();
+  
   // `inproc_connections_to_cleanup` is used later by `perform_final_pipe_cleanup`.
   // No need to clone it here just for stopping, as inproc "connections" are stopped
   // by closing their ISocketConnection if they appear in `connections_to_close`.
@@ -237,6 +248,9 @@ pub(crate) async fn initiate_core_shutdown(
 
   stop_child_listener_actors(core_arc.clone(), child_actors_to_stop).await;
   close_active_connections(core_arc.clone(), connections_to_close).await;
+  
+  #[cfg(all(feature = "udp", feature = "io-uring"))]
+  stop_udp_uring_actors(udp_uring_actors_to_stop).await;
 
   let mut coordinator = core_arc.shutdown_coordinator.lock().await; // Re-acquire lock
   if coordinator.pending_child_actors.is_empty()
@@ -638,4 +652,31 @@ pub(crate) async fn perform_final_pipe_cleanup(
     handle = core_handle,
     "SocketCore final cleanup complete. Shutdown finished."
   );
+}
+
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+async fn stop_udp_uring_actors(
+  actors: Vec<(String, crate::io_uring_backend::udp_uring_actor::UdpUringActorHandle)>,
+) {
+  use crate::io_uring_backend::udp_uring_actor::UdpUringCommand;
+  
+  if actors.is_empty() {
+    return;
+  }
+
+  tracing::debug!(count = actors.len(), "Stopping UDP io_uring actors...");
+
+  for (uri, actor_handle) in actors {
+    tracing::debug!(uri = %uri, "Stopping UDP io_uring actor");
+    let _ = actor_handle.control_tx.try_send(UdpUringCommand::Stop);
+    let _ = actor_handle.event_fd.write(1u64);
+    
+    tokio::task::spawn_blocking(move || {
+      match actor_handle.join_handle.join() {
+        Ok(Ok(())) => tracing::debug!(uri = %uri, "UDP io_uring actor joined cleanly"),
+        Ok(Err(e)) => tracing::error!(uri = %uri, "UDP io_uring actor error: {}", e),
+        Err(_) => tracing::error!(uri = %uri, "UDP io_uring actor panicked"),
+      }
+    });
+  }
 }

@@ -1185,3 +1185,97 @@ async fn handle_user_monitor(
   core_arc.core_state.write().monitor_tx = Some(monitor_tx);
   let _ = reply_tx.send(Ok(()));
 }
+
+#[cfg(all(feature = "udp", feature = "io-uring"))]
+async fn handle_radio_bind_uring(
+  core_arc: &Arc<SocketCore>,
+  socket_logic: &Arc<dyn ISocket>,
+  udp_ep: &crate::transport::udp_endpoint::UdpEndpoint,
+  uri: &str,
+  options: &crate::socket::options::SocketOptions,
+  context: &crate::context::Context,
+  parent_socket_id: usize,
+  monitor_tx: Option<&crate::socket::events::MonitorSender>,
+) -> Result<(), ZmqError> {
+  use crate::io_uring_backend::udp_uring_actor::{UdpUringActor, UdpUringActorConfig, UdpUringActorHandle};
+  use crate::io_uring_backend::udp_send_connection::UdpUringSendConnection;
+  use crate::socket::connection_iface::ISocketConnection;
+  use crate::socket::events::SocketEvent;
+  use crate::transport::udp_uring;
+  use std::net::SocketAddr;
+  use std::sync::Arc;
+
+  let (socket_fd, resolved_uri) = udp_uring::create_bound_raw_udp_socket(udp_ep, options)?;
+  
+  let conn_id = context.inner().next_handle();
+  let pipe_write_id = context.inner().next_handle();
+  let pipe_read_id = context.inner().next_handle();
+  let actor_handle = context.inner().next_handle();
+
+  let (send_tx, _send_rx) = fibre::mpsc::bounded(1024);
+  
+  let event_fd = eventfd::EventFD::new(
+    0,
+    eventfd::EfdFlags::EFD_CLOEXEC | eventfd::EfdFlags::EFD_NONBLOCK,
+  )?;
+
+  let send_addr: SocketAddr = udp_ep.send_addr.ok_or_else(|| {
+    ZmqError::InvalidState("Radio bind requires send_addr".to_string())
+  })?;
+
+  let actor_config = UdpUringActorConfig {
+    handle: actor_handle,
+    socket_fd,
+    endpoint_uri: resolved_uri.clone(),
+    ring_entries: 256,
+    recv_buffer_count: 32,
+    recv_buffer_size: 65536,
+    pipe_read_id,
+    socket_logic: None,
+    send_addr: Some(send_addr),
+    send_zerocopy: options.udp_uring.send_zerocopy,
+    send_channel_capacity: 1024,
+    context: context.clone(),
+    recv_delivery_tx: None,
+  };
+
+  let udp_actor_handle = UdpUringActor::spawn(actor_config)?;
+  
+  let conn: Arc<dyn ISocketConnection> = Arc::new(UdpUringSendConnection::new(
+    send_tx,
+    event_fd,
+    send_addr,
+    conn_id,
+  ));
+
+  {
+    let mut cs = core_arc.core_state.write();
+    cs.pipe_read_id_to_endpoint_uri.insert(pipe_read_id, resolved_uri.clone());
+    cs.endpoints.insert(
+      resolved_uri.clone(),
+      EndpointInfo {
+        mailbox: core_arc.command_sender(),
+        task_handle: None,
+        endpoint_type: EndpointType::Session,
+        endpoint_uri: resolved_uri.clone(),
+        pipe_ids: Some((pipe_write_id, pipe_read_id)),
+        handle_id: conn_id,
+        target_endpoint_uri: None,
+        is_outbound_connection: false,
+        peer_socket_type: None,
+        connection_iface: conn,
+      },
+    );
+    cs.udp_uring_actors.insert(resolved_uri.clone(), udp_actor_handle);
+  }
+
+  socket_logic.pipe_attached(pipe_read_id, pipe_write_id, None).await;
+
+  if let Some(mtx) = monitor_tx {
+    let _ = mtx.try_send(SocketEvent::Listening {
+      endpoint: resolved_uri.clone(),
+    });
+  }
+
+  Ok(())
+}

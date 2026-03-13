@@ -9,7 +9,7 @@ use crate::socket::ISocket;
 
 use bytes::Bytes;
 
-use io_uring::opcode::{RecvMsg, SendMsg};
+use io_uring::opcode::{RecvMsg, SendMsg, SendMsgZc};
 use io_uring::squeue::Flags as SqeFlags;
 use io_uring::types::Fd;
 use io_uring::{cqueue, IoUring, squeue};
@@ -17,7 +17,7 @@ use io_uring::{cqueue, IoUring, squeue};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
 
 use fibre::mpsc;
 use std::sync::Arc;
@@ -36,6 +36,8 @@ pub(crate) struct UdpUringActor {
 
     recv_buffer_manager: Option<BufferRingManager>,
     recv_bgid: Option<u16>,
+    recv_buffer_count: u16,
+    recv_buffer_size: usize,
     multishot_recvmsg_ud: Option<u64>,
     recv_msghdr: Option<Box<RecvMsgContext>>,
 
@@ -54,6 +56,7 @@ pub(crate) struct UdpUringActor {
 
     next_user_data: u64,
     pending_ops: HashMap<u64, UdpUringOpType>,
+    pending_send_contexts: HashMap<u64, Box<SendMsgContext>>,
 
     endpoint_uri: String,
     send_addr: Option<SocketAddr>,
@@ -76,6 +79,15 @@ pub(crate) enum UdpUringCommand {
 pub(crate) struct UdpSendRequest {
     pub data: Bytes,
     pub target_addr: SocketAddr,
+}
+
+impl std::fmt::Debug for UdpSendRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UdpSendRequest")
+            .field("data_len", &self.data.len())
+            .field("target_addr", &self.target_addr)
+            .finish()
+    }
 }
 
 enum UdpUringOpType {
@@ -162,6 +174,16 @@ pub(crate) struct UdpUringActorHandle {
     pub join_handle: std::thread::JoinHandle<Result<(), ZmqError>>,
 }
 
+impl std::fmt::Debug for UdpUringActorHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UdpUringActorHandle")
+            .field("control_tx", &"...")
+            .field("send_tx", &self.send_tx.as_ref().map(|_| "..."))
+            .field("event_fd", &self.event_fd.as_raw_fd())
+            .finish()
+    }
+}
+
 impl UdpUringActor {
     pub(crate) fn spawn(
         config: UdpUringActorConfig,
@@ -188,6 +210,8 @@ impl UdpUringActor {
                     socket_fd: config.socket_fd,
                     recv_buffer_manager: None,
                     recv_bgid: None,
+                    recv_buffer_count: config.recv_buffer_count as u16,
+                    recv_buffer_size: config.recv_buffer_size,
                     multishot_recvmsg_ud: None,
                     recv_msghdr: None,
                     send_rx: Some(send_rx),
@@ -201,6 +225,7 @@ impl UdpUringActor {
                     pipe_read_id: config.pipe_read_id,
                     next_user_data: 1,
                     pending_ops: HashMap::new(),
+                    pending_send_contexts: HashMap::new(),
                     endpoint_uri: config.endpoint_uri,
                     send_addr: config.send_addr,
                     context: config.context,
@@ -240,8 +265,8 @@ impl UdpUringActor {
 
     fn initialize_recv_buffers(&mut self) -> Result<(), ZmqError> {
         let bgid = 0u16;
-        let buf_count = 32;
-        let buf_size = 65536;
+        let buf_count = self.recv_buffer_count;
+        let buf_size = self.recv_buffer_size;
 
         let buf_mgr = BufferRingManager::new(&self.ring, buf_count, bgid, buf_size)?;
 
@@ -510,18 +535,24 @@ impl UdpUringActor {
                 }
                 Some(UdpUringOpType::SendMsg) => {
                     self.pending_ops.remove(&ud);
+                    let _ctx = self.pending_send_contexts.remove(&ud);
                     if result < 0 {
                         tracing::error!("sendmsg failed: {}", io::Error::from_raw_os_error(-result));
+                    } else {
+                        tracing::trace!("sendmsg complete: {} bytes sent", result);
                     }
                 }
                 Some(UdpUringOpType::SendMsgZc { notify_pending }) => {
                     if (flags & IORING_CQE_F_NOTIF) != 0 {
                         self.pending_ops.remove(&ud);
+                        let _ctx = self.pending_send_contexts.remove(&ud);
                         self.pending_zc_sends = self.pending_zc_sends.saturating_sub(1);
-                        tracing::trace!("sendmsg_zc notify received, ud={}", ud);
+                        tracing::trace!("sendmsg_zc notify received, ud={}, buffer freed", ud);
                     } else {
                         if result < 0 {
                             tracing::error!("sendmsg_zc failed: {}", io::Error::from_raw_os_error(-result));
+                        } else {
+                            tracing::trace!("sendmsg_zc submitted: {} bytes, waiting for notify", result);
                         }
                         if let Some(op) = self.pending_ops.get_mut(&ud) {
                             *op = UdpUringOpType::SendMsgZc { notify_pending: true };
@@ -649,6 +680,7 @@ impl UdpUringActor {
     }
 
     fn queue_sendmsg(&mut self, req: UdpSendRequest) {
+        let data_len = req.data.len();
         let mut ctx = Box::new(SendMsgContext::new(req.data, req.target_addr));
         let ud = self.next_ud();
 
@@ -660,43 +692,45 @@ impl UdpUringActor {
         .user_data(ud);
 
         self.pending_ops.insert(ud, UdpUringOpType::SendMsg);
+        self.pending_send_contexts.insert(ud, ctx);
 
         let mut sq = unsafe { self.ring.submission_shared() };
         match unsafe { sq.push(&sqe) } {
             Ok(()) => {
-                std::mem::forget(ctx);
-                tracing::trace!("Queued sendmsg SQE, ud={}", ud);
+                tracing::trace!("Queued sendmsg SQE, ud={}, {} bytes", ud, data_len);
             }
             Err(_) => {
                 self.pending_ops.remove(&ud);
+                self.pending_send_contexts.remove(&ud);
                 tracing::warn!("SQ full, dropping sendmsg");
             }
         }
     }
 
     fn queue_sendmsg_zc(&mut self, req: UdpSendRequest) {
+        let data_len = req.data.len();
         let mut ctx = Box::new(SendMsgContext::new(req.data, req.target_addr));
         let ud = self.next_ud();
 
-        let sqe = SendMsg::new(
+        let sqe = SendMsgZc::new(
             Fd(self.socket_fd),
             ctx.msghdr_ptr(),
         )
         .build()
-        .flags(SqeFlags::IO_DRAIN)
         .user_data(ud);
 
         self.pending_ops.insert(ud, UdpUringOpType::SendMsgZc { notify_pending: false });
+        self.pending_send_contexts.insert(ud, ctx);
         self.pending_zc_sends += 1;
 
         let mut sq = unsafe { self.ring.submission_shared() };
         match unsafe { sq.push(&sqe) } {
             Ok(()) => {
-                std::mem::forget(ctx);
-                tracing::trace!("Queued sendmsg_zc SQE, ud={}", ud);
+                tracing::trace!("Queued sendmsg_zc SQE, ud={}, {} bytes", ud, data_len);
             }
             Err(_) => {
                 self.pending_ops.remove(&ud);
+                self.pending_send_contexts.remove(&ud);
                 self.pending_zc_sends = self.pending_zc_sends.saturating_sub(1);
                 tracing::warn!("SQ full, dropping sendmsg_zc");
             }
