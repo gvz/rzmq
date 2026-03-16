@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use fibre::mpmc::unbounded;
-use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use tokio::task::{JoinHandle as TokioTaskJoinHandle, spawn_blocking};
 use tracing::{debug, error, info, warn};
@@ -55,68 +55,75 @@ impl Default for UringConfig {
   }
 }
 
-static URING_INIT_RESULT: OnceCell<Result<(), ZmqError>> = OnceCell::new();
+static URING_INIT_LOCK: Mutex<()> = Mutex::new(());
 pub static URING_BACKEND_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 const NOT_INITIALIZED_ERROR_MSG: &str = "io_uring backend not initialized.";
 
 pub fn initialize_uring_backend(config: UringConfig) -> Result<(), ZmqError> {
-  let init_result_ref: Result<&Result<(), ZmqError>, ZmqError> = URING_INIT_RESULT.get_or_try_init(|| -> Result<Result<(), ZmqError>, ZmqError> {
-    info!(
-      "Initializing global io_uring backend with config: {:?}",
-      config
-    );
-
-    let (upstream_event_tx, upstream_event_rx) = unbounded::<(RawFd, HandlerUpstreamEvent)>();
-    *global_state::get_global_parsed_msg_tx_mutex().lock() = Some(upstream_event_tx.clone());
-    *global_state::get_global_parsed_msg_rx_mutex().lock() = Some(upstream_event_rx.to_async());
-    debug!("io_uring::initialize: Upstream message channel set in global state.");
-
-    let factories: Vec<Arc<dyn ProtocolHandlerFactory>> = vec![Arc::new(ZmtpHandlerFactory {})];
-    let (signaling_op_tx, worker_join_handle) =
-      UringWorker::spawn_with_config(config, factories, upstream_event_tx).map_err(|e| {
-        error!("Failed to spawn UringWorker: {}", e);
-        *global_state::get_global_parsed_msg_tx_mutex().lock() = None;
-        *global_state::get_global_parsed_msg_rx_mutex().lock() = None;
-        e
-      })?;
-
-    *global_state::get_uring_worker_op_tx_mutex().lock() = Some(signaling_op_tx);
-    *global_state::get_uring_worker_join_handle_mutex().lock() = Some(worker_join_handle);
-    debug!("io_uring::initialize: Global UringWorker spawned and its handles stored.");
-
-    let fd_mailbox_map_oncecell =
-      global_state::get_uring_fd_to_socket_core_mailbox_map_oncecell();
-    let fd_mailbox_map = fd_mailbox_map_oncecell
-      .get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
-      .clone();
-    debug!("io_uring::initialize: URING_FD_TO_SOCKET_CORE_MAILBOX_MAP ensured/retrieved.");
-
-    let processor_rx = global_state::get_global_parsed_msg_rx_mutex().lock().take()
-      .ok_or_else(|| ZmqError::Internal("Upstream RX channel was unexpectedly None for processor task".into()))?;
-
-    let processor_join_handle: TokioTaskJoinHandle<()> = tokio::spawn(
-      global_state::run_global_uring_upstream_processor(processor_rx, fd_mailbox_map),
-    );
-    *global_state::get_uring_upstream_processor_join_handle_mutex().lock() =
-      Some(processor_join_handle);
-    debug!("io_uring::initialize: Global Uring Upstream Message Processor task spawned and handle stored.");
-
-    URING_BACKEND_INITIALIZED.store(true, Ordering::SeqCst);
-    info!("Global io_uring backend successfully initialized.");
-    
-    Ok(Ok(()))
-  });
-
-  match init_result_ref {
-    Ok(stored_result_ref) => (*stored_result_ref).clone(),
-    Err(init_error) => Err(init_error.clone()),
+  // Fast path: already initialized
+  if URING_BACKEND_INITIALIZED.load(Ordering::SeqCst) {
+    return Ok(());
   }
+
+  // Slow path: acquire lock and double-check
+  let _guard = URING_INIT_LOCK.lock().map_err(|e| {
+    ZmqError::Internal(format!("Failed to acquire URING_INIT_LOCK: {}", e))
+  })?;
+  if URING_BACKEND_INITIALIZED.load(Ordering::SeqCst) {
+    return Ok(());
+  }
+
+  // --- Perform initialization ---
+  info!(
+    "Initializing global io_uring backend with config: {:?}",
+    config
+  );
+
+  let (upstream_event_tx, upstream_event_rx) = unbounded::<(RawFd, HandlerUpstreamEvent)>();
+  *global_state::get_global_parsed_msg_tx_mutex().lock() = Some(upstream_event_tx.clone());
+  *global_state::get_global_parsed_msg_rx_mutex().lock() = Some(upstream_event_rx.to_async());
+  debug!("io_uring::initialize: Upstream message channel set in global state.");
+
+  let factories: Vec<Arc<dyn ProtocolHandlerFactory>> = vec![Arc::new(ZmtpHandlerFactory {})];
+  let (signaling_op_tx, worker_join_handle) =
+    UringWorker::spawn_with_config(config, factories, upstream_event_tx).map_err(|e| {
+      error!("Failed to spawn UringWorker: {}", e);
+      *global_state::get_global_parsed_msg_tx_mutex().lock() = None;
+      *global_state::get_global_parsed_msg_rx_mutex().lock() = None;
+      e
+    })?;
+
+  *global_state::get_uring_worker_op_tx_mutex().lock() = Some(signaling_op_tx);
+  *global_state::get_uring_worker_join_handle_mutex().lock() = Some(worker_join_handle);
+  debug!("io_uring::initialize: Global UringWorker spawned and its handles stored.");
+
+  let fd_mailbox_map_oncecell =
+    global_state::get_uring_fd_to_socket_core_mailbox_map_oncecell();
+  let fd_mailbox_map = fd_mailbox_map_oncecell
+    .get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
+    .clone();
+  debug!("io_uring::initialize: URING_FD_TO_SOCKET_CORE_MAILBOX_MAP ensured/retrieved.");
+
+  let processor_rx = global_state::get_global_parsed_msg_rx_mutex().lock().take()
+    .ok_or_else(|| ZmqError::Internal("Upstream RX channel was unexpectedly None for processor task".into()))?;
+
+  let processor_join_handle: TokioTaskJoinHandle<()> = tokio::spawn(
+    global_state::run_global_uring_upstream_processor(processor_rx, fd_mailbox_map),
+  );
+  *global_state::get_uring_upstream_processor_join_handle_mutex().lock() =
+    Some(processor_join_handle);
+  debug!("io_uring::initialize: Global Uring Upstream Message Processor task spawned and handle stored.");
+
+  URING_BACKEND_INITIALIZED.store(true, Ordering::SeqCst);
+  info!("Global io_uring backend successfully initialized.");
+
+  Ok(())
 }
 
 pub async fn shutdown_uring_backend() -> Result<(), ZmqError> {
   // Check if initialization ever happened.
-  if URING_INIT_RESULT.get().is_none() || !URING_BACKEND_INITIALIZED.load(Ordering::SeqCst) {
+  if !URING_BACKEND_INITIALIZED.load(Ordering::SeqCst) {
     warn!("{}", NOT_INITIALIZED_ERROR_MSG);
     return Ok(());
   }
@@ -127,16 +134,33 @@ pub async fn shutdown_uring_backend() -> Result<(), ZmqError> {
     return Ok(());
   }
 
+  // Acquire the initialization lock to prevent re-initialization during shutdown.
+  // This ensures a clean shutdown before any new initialization can proceed.
+  let _guard = URING_INIT_LOCK.lock().map_err(|e| {
+    ZmqError::Internal(format!("Failed to acquire URING_INIT_LOCK during shutdown: {}", e))
+  })?;
+
+  // Double-check after acquiring lock (another thread might have re-initialized).
+  if !URING_BACKEND_INITIALIZED.load(Ordering::SeqCst) {
+    warn!("io_uring backend was re-initialized during shutdown. Skipping shutdown.");
+    return Ok(());
+  }
+
   info!("Shutting down global io_uring backend...");
 
-  // 1. Signal the worker to stop by closing its op channel.
+  // 1. Signal the upstream processor to stop FIRST, before shutting down the worker.
+  // This ensures the processor exits promptly rather than waiting for channel closure.
+  global_state::get_upstream_processor_shutdown_notify().notify_one();
+  debug!("io_uring::shutdown: Sent shutdown signal to upstream processor.");
+
+  // 2. Signal the worker to stop by closing its op channel.
   let taken_op_tx = global_state::get_uring_worker_op_tx_mutex().lock().take();
   if taken_op_tx.is_some() {
     debug!("io_uring::shutdown: Signaled UringWorker to stop by closing its op channel.");
   }
   drop(taken_op_tx);
 
-  // 2. Join the worker thread. Use spawn_blocking to avoid stalling the async runtime.
+  // 3. Join the worker thread. Use spawn_blocking to avoid stalling the async runtime.
   if let Some(worker_handle) = global_state::get_uring_worker_join_handle_mutex()
     .lock()
     .take()
@@ -154,8 +178,8 @@ pub async fn shutdown_uring_backend() -> Result<(), ZmqError> {
     warn!("io_uring::shutdown: UringWorker JoinHandle was None. Cannot join.");
   }
 
-  // 3. The UpstreamProcessor will have been signaled by the worker dropping the TX side.
-  //    Now we just need to await its completion.
+  // 4. Await the upstream processor task completion.
+  //    The processor was already signaled in step 1, so it should exit promptly.
   if let Some(processor_handle) = global_state::get_uring_upstream_processor_join_handle_mutex()
     .lock()
     .take()
@@ -171,7 +195,7 @@ pub async fn shutdown_uring_backend() -> Result<(), ZmqError> {
     warn!("io_uring::shutdown: UringUpstreamProcessor JoinHandle was None. Cannot await.");
   }
 
-  // 4. Final cleanup of global maps.
+  // 5. Final cleanup of global maps.
   if let Some(map_arc) = global_state::get_uring_fd_to_socket_core_mailbox_map_oncecell().get() {
     map_arc.write().clear();
     debug!("io_uring::shutdown: Cleared contents of global FD-to-mailbox map.");

@@ -49,6 +49,10 @@ pub(crate) struct ContextInner {
   /// Flag indicating if context-wide shutdown has been initiated.
   /// Used to prevent redundant shutdown operations and to signal actors.
   pub(crate) shutdown_initiated: AtomicBool,
+  /// Flag indicating if the io-uring context count has already been decremented.
+  /// Used to prevent double-decrement when term() is called and then Drop also fires.
+  #[cfg(feature = "io-uring")]
+  uring_context_decremented: AtomicBool,
   actor_mailbox_capacity: usize,
 }
 
@@ -69,6 +73,7 @@ impl ContextInner {
         }
       }
       global_state::get_global_uring_worker_op_tx()?;
+      global_state::increment_uring_context_count();
     }
 
     Ok(Self {
@@ -79,6 +84,8 @@ impl ContextInner {
       event_bus,
       actor_wait_group,
       shutdown_initiated: AtomicBool::new(false),
+      #[cfg(feature = "io-uring")]
+      uring_context_decremented: AtomicBool::new(false),
       actor_mailbox_capacity,
     })
   }
@@ -183,6 +190,23 @@ impl ContextInner {
     }
   }
 
+  /// Tries to decrement the io-uring context count.
+  /// Returns the previous count if this was the first decrement, or None if already decremented.
+  /// This prevents double-decrement when term() is called and then Drop also fires.
+  #[cfg(feature = "io-uring")]
+  pub(crate) fn try_decrement_uring_context(&self) -> Option<usize> {
+    use std::sync::atomic::Ordering;
+    if self
+      .uring_context_decremented
+      .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+      .is_ok()
+    {
+      Some(global_state::decrement_uring_context_count())
+    } else {
+      None // Already decremented (term() was called before drop)
+    }
+  }
+
   /// Registers an in-process binding. The `binder_core_id` identifies the `SocketCore`
   /// that is binding to this name, allowing it to filter `InprocBindingRequest` events.
   #[cfg(feature = "inproc")]
@@ -224,6 +248,35 @@ impl ContextInner {
   /// Provides access to the shared `EventBus` instance Arc.
   pub(crate) fn event_bus(&self) -> Arc<EventBus> {
     self.event_bus.clone()
+  }
+}
+
+impl Drop for ContextInner {
+  fn drop(&mut self) {
+    let _ = self.event_bus.publish(SystemEvent::ContextTerminating);
+
+    #[cfg(feature = "io-uring")]
+    {
+      if let Some(prev_count) = self.try_decrement_uring_context() {
+        if prev_count == 1 {
+          std::thread::spawn(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+              .enable_all()
+              .build();
+            if let Ok(rt) = rt {
+              rt.block_on(async {
+                if let Err(e) = crate::uring::shutdown_uring_backend().await {
+                  tracing::warn!(
+                    "Failed to shutdown io-uring backend on last context drop: {}",
+                    e
+                  );
+                }
+              });
+            }
+          });
+        }
+      }
+    }
   }
 }
 
@@ -285,6 +338,15 @@ impl Context {
   pub async fn term(&self) -> Result<(), ZmqError> {
     self.inner.shutdown().await; // Ensure shutdown is initiated.
     self.inner.wait_for_termination().await; // Wait using the WG.
+
+    #[cfg(feature = "io-uring")]
+    {
+      if let Some(prev_count) = self.inner.try_decrement_uring_context() {
+        if prev_count == 1 {
+          crate::uring::shutdown_uring_backend().await?;
+        }
+      }
+    }
 
     Ok(())
   }

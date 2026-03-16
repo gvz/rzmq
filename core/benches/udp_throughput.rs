@@ -156,7 +156,15 @@ fn teardown_udp_bench(
   Box::pin(async move {
     let _ = state.dish_socket.close().await;
     let _ = state.radio_socket.close().await;
-    sleep(Duration::from_millis(100)).await;
+
+    // Properly terminate the context to ensure all actors are stopped
+    // and resources are cleaned up before the next iteration.
+    #[cfg(not(feature = "io-uring"))]
+    {
+      if let Err(e) = state.ctx_arc.term().await {
+        eprintln!("[Teardown] Context termination failed: {}", e);
+      }
+    }
   })
 }
 

@@ -1,13 +1,13 @@
 #![cfg(feature = "io-uring")]
 
-use super::{ExternalOpContext, UringWorker, cqe_processor};
-use crate::ZmqError;
+use super::{cqe_processor, ExternalOpContext, UringWorker};
 use crate::io_uring_backend::buffer_manager::BufferRingManager;
 use crate::io_uring_backend::connection_handler::UringWorkerInterface;
 use crate::io_uring_backend::ops::{UringOpCompletion, UringOpRequest};
 use crate::io_uring_backend::worker::{InternalOpPayload, InternalOpType, WorkerState};
 use crate::profiler::LoopProfiler;
 use crate::transport::endpoint::parse_endpoint;
+use crate::ZmqError;
 
 use std::collections::VecDeque;
 use std::mem;
@@ -67,7 +67,8 @@ impl UringWorker {
 
     trace!(
       "UringWorker: Handling external op request: {}, ud: {}",
-      op_name_str, user_data
+      op_name_str,
+      user_data
     );
 
     match request {
@@ -395,6 +396,15 @@ pub(crate) fn run_worker_loop(worker: &mut UringWorker) -> Result<(), ZmqError> 
   let mut profiler = LoopProfiler::new(Duration::from_millis(10), 10000);
   let mut kernel_poll_timeout_duration = KERNEL_POLL_INITIAL;
 
+  {
+    let mut sq = unsafe { worker.ring.submission_shared() };
+    if !worker.event_fd_poller.try_submit_initial_poll_sqe(&mut sq) {
+      warn!("[UringWorker] Failed to submit initial eventfd poll SQE");
+    }
+    drop(sq);
+    let _ = worker.ring.submitter().submit();
+  }
+
   while worker.state != WorkerState::Stopped {
     profiler.loop_start();
 
@@ -584,7 +594,8 @@ pub(crate) fn run_worker_loop(worker: &mut UringWorker) -> Result<(), ZmqError> 
               } else {
                 trace!(
                   "UringWorker: Queued new standard read for FD {}. UD: {}",
-                  fd, user_data
+                  fd,
+                  user_data
                 );
               }
             }
@@ -596,6 +607,12 @@ pub(crate) fn run_worker_loop(worker: &mut UringWorker) -> Result<(), ZmqError> 
           }
         }
         drop(sq);
+
+        if !worker.event_fd_poller.is_poll_submitted {
+          let mut sq = unsafe { worker.ring.submission_shared() };
+          worker.event_fd_poller.try_submit_initial_poll_sqe(&mut sq);
+          drop(sq);
+        }
 
         // --- PHASE 4 & 5: SUBMIT AND IDLE ---
         profiler.mark_segment_end_and_start_new("submit_and_idle");

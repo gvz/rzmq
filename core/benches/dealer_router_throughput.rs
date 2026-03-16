@@ -293,7 +293,15 @@ fn teardown_dealer_router_bench(
     if let Err(e) = state.router_socket.close().await {
       eprintln!("[Teardown Warning] Error closing ROUTER: {}", e);
     }
-    sleep(Duration::from_millis(100)).await;
+
+    // Properly terminate the context to ensure all actors are stopped
+    // and resources are cleaned up before the next iteration.
+    #[cfg(not(feature = "io-uring"))]
+    {
+      if let Err(e) = state.ctx_arc.term().await {
+        eprintln!("[Teardown] Context termination failed: {}", e);
+      }
+    }
     if PRINT_BENCH_INFO {
       println!("[Teardown] Finished.");
     }

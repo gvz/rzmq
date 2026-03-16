@@ -1,15 +1,17 @@
 #![cfg(feature = "io-uring")]
 
+use crate::error::ZmqError;
 use crate::io_uring_backend::connection_handler::HandlerUpstreamEvent;
 use crate::io_uring_backend::signaling_op_sender::SignalingOpSender;
 use crate::message::Blob;
 use crate::runtime::MailboxSender as SocketCoreMailboxSender;
 use crate::runtime::command::Command;
-use crate::{error::ZmqError, uring::URING_BACKEND_INITIALIZED};
+use crate::uring::URING_BACKEND_INITIALIZED;
 
 use std::collections::HashMap;
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::thread::JoinHandle as StdThreadJoinHandle;
 
 #[cfg(feature = "io-uring")]
@@ -19,6 +21,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use parking_lot::RwLock;
 use tokio::task::JoinHandle as TokioTaskJoinHandle;
+use tokio::sync::Notify;
 use tracing::{debug, error, info, trace, warn};
 
 // --- Global Static Cells (Modified) ---
@@ -44,6 +47,20 @@ static URING_UPSTREAM_PROCESSOR_JOIN_HANDLE: OnceCell<Mutex<Option<TokioTaskJoin
 static URING_FD_TO_SOCKET_CORE_MAILBOX_MAP: OnceCell<
   Arc<RwLock<HashMap<RawFd, SocketCoreMailboxSender>>>,
 > = OnceCell::new();
+
+/// Number of active Context instances using the io-uring backend.
+static ACTIVE_URING_CONTEXT_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Notify used to signal the upstream processor to stop.
+static UPSTREAM_PROCESSOR_SHUTDOWN_NOTIFY: OnceCell<Arc<Notify>> = OnceCell::new();
+
+pub(crate) fn increment_uring_context_count() {
+  ACTIVE_URING_CONTEXT_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub(crate) fn decrement_uring_context_count() -> usize {
+  ACTIVE_URING_CONTEXT_COUNT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst)
+}
 
 // --- Getters for OnceCells (Modified to reflect Mutex<Option<T>>) ---
 // These now return a reference to the Mutex, allowing guarded access to the Option<T>.
@@ -83,6 +100,12 @@ pub(crate) fn get_uring_upstream_processor_join_handle_mutex()
 pub(crate) fn get_uring_fd_to_socket_core_mailbox_map_oncecell()
 -> &'static OnceCell<Arc<RwLock<HashMap<RawFd, SocketCoreMailboxSender>>>> {
   &URING_FD_TO_SOCKET_CORE_MAILBOX_MAP // This one we still init directly in uring.rs
+}
+
+#[doc(hidden)]
+#[cfg(feature = "io-uring")]
+pub(crate) fn get_upstream_processor_shutdown_notify() -> &'static Arc<Notify> {
+  UPSTREAM_PROCESSOR_SHUTDOWN_NOTIFY.get_or_init(|| Arc::new(Notify::new()))
 }
 
 pub(crate) fn ensure_global_uring_systems_started() -> Result<(), ZmqError> {
@@ -151,48 +174,72 @@ pub(crate) async fn run_global_uring_upstream_processor(
   fd_to_mailbox_map: Arc<RwLock<HashMap<RawFd, SocketCoreMailboxSender>>>,
 ) {
   info!("Global io_uring upstream message processor task started.");
+  let shutdown_notify = get_upstream_processor_shutdown_notify();
+
   loop {
-    use fibre::RecvError;
+    tokio::select! {
+      biased;
 
-    match msg_rx.recv().await {
-      Ok((fd, upstream_event)) => {
-        trace!(raw_fd = fd, event_type = ?upstream_event_variant_name(&upstream_event), "UringUpstreamProcessor: Received event for FD.");
-        let socket_core_mailbox_clone: Option<SocketCoreMailboxSender> =
-          { fd_to_mailbox_map.read().get(&fd).cloned() };
-
-        if let Some(socket_core_mailbox) = socket_core_mailbox_clone {
-          let command_to_send_to_core: Option<Command> = match upstream_event {
-            HandlerUpstreamEvent::Data(msg) => Some(Command::UringFdMessage { fd, msg }),
-            HandlerUpstreamEvent::HandshakeComplete { peer_identity } => {
-              Some(Command::UringFdHandshakeComplete { fd, peer_identity })
-            }
-            HandlerUpstreamEvent::Error(error) => Some(Command::UringFdError { fd, error }),
-          };
-          if let Some(cmd) = command_to_send_to_core {
-            if let Err(e) = socket_core_mailbox.send(cmd).await {
-              error!(
-                raw_fd = fd,
-                "UringUpstreamProcessor: Failed to send Command to SocketCore for FD {}: {}. Unregistering FD.",
-                fd,
-                e
-              );
-              fd_to_mailbox_map.write().remove(&fd);
-            }
-          }
-        } else {
-          warn!(
-            raw_fd = fd,
-            "UringUpstreamProcessor: Received event for unregistered FD. Discarding."
-          );
+      _ = shutdown_notify.notified() => {
+        while let Ok((fd, event)) = msg_rx.try_recv() {
+          process_upstream_event(fd, event, &fd_to_mailbox_map).await;
         }
-      }
-      Err(RecvError::Disconnected) => {
-        info!("UringUpstreamProcessor: Upstream message channel closed. Terminating task.");
+        tracing::info!("[UringUpstreamProcessor] Shutdown signal received, exiting.");
         break;
+      }
+
+      result = msg_rx.recv() => {
+        use fibre::RecvError;
+        match result {
+          Ok((fd, upstream_event)) => {
+            process_upstream_event(fd, upstream_event, &fd_to_mailbox_map).await;
+          }
+          Err(RecvError::Disconnected) => {
+            tracing::info!("[UringUpstreamProcessor] Channel disconnected, exiting.");
+            break;
+          }
+        }
       }
     }
   }
   warn!("Global io_uring upstream message processor task has exited.");
+}
+
+#[cfg(feature = "io-uring")]
+async fn process_upstream_event(
+  fd: RawFd,
+  event: HandlerUpstreamEvent,
+  fd_to_mailbox_map: &Arc<RwLock<HashMap<RawFd, SocketCoreMailboxSender>>>,
+) {
+  trace!(raw_fd = fd, event_type = ?upstream_event_variant_name(&event), "UringUpstreamProcessor: Received event for FD.");
+  let socket_core_mailbox_clone: Option<SocketCoreMailboxSender> =
+    { fd_to_mailbox_map.read().get(&fd).cloned() };
+
+  if let Some(socket_core_mailbox) = socket_core_mailbox_clone {
+    let command_to_send_to_core: Option<Command> = match event {
+      HandlerUpstreamEvent::Data(msg) => Some(Command::UringFdMessage { fd, msg }),
+      HandlerUpstreamEvent::HandshakeComplete { peer_identity } => {
+        Some(Command::UringFdHandshakeComplete { fd, peer_identity })
+      }
+      HandlerUpstreamEvent::Error(error) => Some(Command::UringFdError { fd, error }),
+    };
+    if let Some(cmd) = command_to_send_to_core {
+      if let Err(e) = socket_core_mailbox.send(cmd).await {
+        error!(
+          raw_fd = fd,
+          "UringUpstreamProcessor: Failed to send Command to SocketCore for FD {}: {}. Unregistering FD.",
+          fd,
+          e
+        );
+        fd_to_mailbox_map.write().remove(&fd);
+      }
+    }
+  } else {
+    warn!(
+      raw_fd = fd,
+      "UringUpstreamProcessor: Received event for unregistered FD. Discarding."
+    );
+  }
 }
 
 #[cfg(feature = "io-uring")]
