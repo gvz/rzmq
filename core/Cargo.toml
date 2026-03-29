@@ -101,6 +101,11 @@ name = "generic_client_benchmark"
 harness = false
 required-features = ["bench_external_clients"]
 
+[[bench]]
+name = "udp_radio_dish_latency"
+harness = false
+required-features = ["udp"]
+
 [[example]]
 name = "plain_req_rep"
 path = "examples/plain_req_rep.rs"
