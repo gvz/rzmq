@@ -1,4 +1,5 @@
 #![cfg(feature = "noise_xx")]
+#![allow(unexpected_cfgs)]
 
 use super::cipher::IDataCipher;
 use crate::error::ZmqError;
@@ -6,7 +7,6 @@ use crate::security::framer::{ISecureFramer, LengthPrefixedFramer};
 use crate::security::mechanism::ProcessTokenAction;
 use crate::security::{Mechanism, MechanismStatus, Metadata};
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
 use snow::error::{Prerequisite, StateProblem};
 use snow::params::NoiseParams;
 use snow::{Error as SnowError, TransportState};
@@ -482,9 +482,7 @@ impl Mechanism for NoiseXxMechanism {
     self
   }
 
-  fn into_framer(
-    mut self: Box<Self>,
-  ) -> Result<(Box<dyn ISecureFramer>, Option<Vec<u8>>), ZmqError> {
+  fn into_framer(self: Box<Self>) -> Result<(Box<dyn ISecureFramer>, Option<Vec<u8>>), ZmqError> {
     if self.current_status != MechanismStatus::Ready {
       return Err(ZmqError::InvalidState(
         "Noise handshake not complete, cannot create framer.".into(),
@@ -593,7 +591,7 @@ impl From<SnowError> for ZmqError {
           "Noise decrypt/authentication failed (e.g., bad MAC or ciphertext).".into(),
         )
       }
-      #[cfg(feature = "hfs")] // If you enable hfs feature in snow
+      #[cfg(feature = "hfs")]
       SnowError::Kem => {
         ZmqError::SecurityError("Noise Key Encapsulation Mechanism (KEM) failed.".into())
       }

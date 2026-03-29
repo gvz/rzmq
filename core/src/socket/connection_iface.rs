@@ -1,11 +1,10 @@
+#![allow(private_interfaces)]
+
 use crate::error::ZmqError;
 #[cfg(feature = "io-uring")]
 use crate::io_uring_backend::ops::UringOpRequest;
-#[cfg(feature = "io-uring")]
-use crate::io_uring_backend::signaling_op_sender::SignalingOpSender;
 use crate::message::Msg;
 use crate::runtime::SystemEvent;
-use crate::runtime::{command::Command, mailbox::MailboxSender as SessionMailboxSender};
 use crate::socket::events::MonitorSender;
 use crate::socket::options::SocketOptions;
 use crate::socket::SocketEvent;
