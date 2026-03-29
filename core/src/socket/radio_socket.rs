@@ -107,6 +107,7 @@ impl ISocket for RadioSocket {
     {
       Ok(()) => Ok(()),
       Err(failed_uris_with_errors) => {
+        let first_error = failed_uris_with_errors.first().cloned();
         for (uri, error_detail) in failed_uris_with_errors {
           tracing::debug!(
               handle = self.core.handle,
@@ -116,7 +117,11 @@ impl ISocket for RadioSocket {
           );
           self.distributor.remove_peer_uri(&uri);
         }
-        Ok(())
+        if let Some((_uri, e)) = first_error {
+          Err(e)
+        } else {
+          Ok(())
+        }
       }
     }
   }

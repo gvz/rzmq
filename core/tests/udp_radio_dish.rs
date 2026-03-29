@@ -337,7 +337,7 @@ async fn test_udp_wrong_socket_type_push() -> Result<(), Box<dyn std::error::Err
   let push = ctx.socket(SocketType::Push)?;
 
   let result = push.bind("udp://127.0.0.1:5961").await;
-  assert!(matches!(result, Err(ZmqError::UnsupportedTransport(_))));
+  assert!(matches!(result, Err(ZmqError::InvalidSocketType(_))));
 
   ctx.term().await?;
   Ok(())
