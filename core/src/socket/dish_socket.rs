@@ -325,13 +325,21 @@ impl ISocket for DishSocket {
       let current_groups: Vec<Bytes> = self.joined_groups.read().iter().cloned().collect();
       if !current_groups.is_empty() {
         if let Some(conn) = self.get_connection(&endpoint_uri) {
-          for group in current_groups {
-            self
-              .send_group_command_to_peer(&conn, &endpoint_uri, true, &group)
-              .await;
+          if conn.as_any().downcast_ref::<crate::socket::connection_iface::DummyConnection>().is_some() {
+            tracing::debug!(
+                handle = self.core.handle,
+                uri = %endpoint_uri,
+                "DISH pipe_attached: UDP bind mode - cannot send JOIN commands (no return path). Group filtering disabled."
+            );
+          } else {
+            for group in current_groups {
+              self
+                .send_group_command_to_peer(&conn, &endpoint_uri, true, &group)
+                .await;
+            }
           }
         } else {
-          tracing::warn!(
+          tracing::debug!(
               handle = self.core.handle,
               uri = %endpoint_uri,
               "DISH pipe_attached: Connection interface not found for URI. Skipping group sync."

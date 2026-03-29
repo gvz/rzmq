@@ -497,70 +497,12 @@ async fn handle_user_bind(
         (core_s_read.socket_type, core_s_read.endpoints.contains_key(uri_from_parse))
       };
       
-      if !matches!(socket_type, SocketType::Dish | SocketType::Radio) {
+      if !matches!(socket_type, SocketType::Dish) {
         bind_result = Err(ZmqError::InvalidSocketType(
-          "UDP bind only supports Dish or Radio socket type",
+          "UDP bind only supports Dish socket type (use Radio bind + Dish connect for pub/sub)",
         ));
       } else if endpoints_contains {
         bind_result = Err(ZmqError::AddrInUse(uri_from_parse.clone()));
-      } else if matches!(socket_type, SocketType::Radio) {
-        // Radio bind - create a send socket bound to the address
-        let pipe_id_for_attach = {
-          let core_s_read = core_arc.core_state.read();
-          let options_clone = core_s_read.options.clone();
-          drop(core_s_read);
-
-          let pipe_write_id = core_arc.context.inner().next_handle();
-
-          let (udp_socket, resolved_addr_str) = match crate::transport::udp::create_bound_send_socket(
-            udp_endpoint,
-            &options_clone,
-          ) {
-            Ok(result) => result,
-            Err(e) => {
-              bind_result = Err(e);
-              return;
-            }
-          };
-
-          let connection = Arc::new(crate::socket::connection_iface::UdpSendConnection::new(
-            Arc::new(udp_socket),
-            udp_endpoint.send_addr,
-            pipe_write_id,
-            options_clone.sndtimeo,
-          ));
-
-          let resolved_uri = format!("udp://{}", resolved_addr_str);
-          {
-            let mut core_s_write = core_arc.core_state.write();
-            core_s_write.pipe_read_id_to_endpoint_uri.insert(
-              pipe_write_id,
-              resolved_uri.clone(),
-            );
-            core_s_write.endpoints.insert(
-              resolved_uri.clone(),
-              EndpointInfo {
-                mailbox: core_arc.command_sender(),
-                task_handle: None,
-                endpoint_type: EndpointType::Listener,
-                endpoint_uri: resolved_uri.clone(),
-                pipe_ids: Some((0, pipe_write_id)),
-                handle_id: pipe_write_id,
-                target_endpoint_uri: Some(udp_endpoint.send_addr.to_string()),
-                is_outbound_connection: false,
-                peer_socket_type: None,
-                connection_iface: connection.clone(),
-              },
-            );
-          }
-          actual_uri_for_state_update = Some(resolved_uri);
-          bind_result = Ok(());
-          pipe_write_id
-        };
-
-        if bind_result.is_ok() {
-          socket_logic.pipe_attached(pipe_id_for_attach, 0, None).await;
-        }
       } else {
         let pipe_id_for_attach = {
           let core_s_read = core_arc.core_state.read();
@@ -691,123 +633,67 @@ async fn handle_user_connect(
     #[cfg(feature = "udp")]
     Ok(Endpoint::Udp(ref udp_endpoint, ref parsed_uri)) => {
       let socket_type = core_arc.core_state.read().socket_type;
-      if !matches!(socket_type, SocketType::Radio | SocketType::Dish) {
+      if !matches!(socket_type, SocketType::Radio) {
         let _ = reply_tx.send(Err(ZmqError::InvalidSocketType(
-          "UDP connect only supports Radio or Dish socket type",
+          "UDP connect only supports Radio socket type (use Radio bind + Dish connect for pub/sub)",
         )));
         return;
       }
 
-      if matches!(socket_type, SocketType::Dish) {
-        // Dish connect - create receive actor
-        let pipe_id_for_attach = {
-          let core_s_read = core_arc.core_state.read();
-          let monitor_tx_clone = core_s_read.get_monitor_sender_clone();
-          let options_clone = core_s_read.options.clone();
-          drop(core_s_read);
+      // Radio connect - create send socket
+      let options_clone = {
+        let core_s_read = core_arc.core_state.read();
+        core_s_read.options.clone()
+      };
 
-          let child_actor_handle = context_clone.inner().next_handle();
-          let pipe_read_id = context_clone.inner().next_handle();
+      let pipe_write_id = core_arc.context.inner().next_handle();
 
-          match UdpReceiveActor::create_and_spawn(
-            child_actor_handle,
-            udp_endpoint,
-            socket_logic.clone(),
-            context_clone.clone(),
-            parent_socket_id,
-            monitor_tx_clone,
-            core_arc.clone(),
-            pipe_read_id,
-            &options_clone,
-          ) {
-            Ok((mailbox, task_handle, resolved_uri)) => {
-              let mut core_s_write = core_arc.core_state.write();
-              core_s_write.pipe_read_id_to_endpoint_uri.insert(
-                pipe_read_id,
-                resolved_uri.clone(),
-              );
-              core_s_write.endpoints.insert(
-                resolved_uri.clone(),
-                EndpointInfo {
-                  mailbox,
-                  task_handle: Some(task_handle),
-                  endpoint_type: EndpointType::Session,
-                  endpoint_uri: resolved_uri.clone(),
-                  pipe_ids: Some((pipe_read_id, 0)),
-                  handle_id: child_actor_handle,
-                  target_endpoint_uri: Some(udp_endpoint.send_addr.to_string()),
-                  is_outbound_connection: true,
-                  peer_socket_type: None,
-                  connection_iface: Arc::new(crate::socket::connection_iface::DummyConnection),
-                },
-              );
-              pipe_read_id
-            }
-            Err(e) => {
-              let _ = reply_tx.send(Err(e));
-              return;
-            }
-          }
-        };
+      let udp_socket = match crate::transport::udp::create_connected_send_socket(
+        udp_endpoint,
+        &options_clone,
+      ) {
+        Ok(socket) => socket,
+        Err(e) => {
+          let _ = reply_tx.send(Err(e));
+          return;
+        }
+      };
 
-        socket_logic.pipe_attached(pipe_id_for_attach, 0, None).await;
-        let _ = reply_tx.send(Ok(()));
-      } else {
-        // Radio connect - create send socket
-        let options_clone = {
-          let core_s_read = core_arc.core_state.read();
-          core_s_read.options.clone()
-        };
+      let connection = Arc::new(crate::socket::connection_iface::UdpSendConnection::new(
+        Arc::new(udp_socket),
+        udp_endpoint.send_addr,
+        pipe_write_id,
+        options_clone.sndtimeo,
+      ));
 
-        let pipe_write_id = core_arc.context.inner().next_handle();
-
-        let udp_socket = match crate::transport::udp::create_connected_send_socket(
-          udp_endpoint,
-          &options_clone,
-        ) {
-          Ok(socket) => socket,
-          Err(e) => {
-            let _ = reply_tx.send(Err(e));
-            return;
-          }
-        };
-
-        let connection = Arc::new(crate::socket::connection_iface::UdpSendConnection::new(
-          Arc::new(udp_socket),
-          udp_endpoint.send_addr,
+      let pipe_write_id_for_attach = {
+        let mut core_s_write = core_arc.core_state.write();
+        let resolved_uri = parsed_uri.clone();
+        core_s_write.pipe_read_id_to_endpoint_uri.insert(
           pipe_write_id,
-          options_clone.sndtimeo,
-        ));
+          resolved_uri.clone(),
+        );
+        core_s_write.endpoints.insert(
+          resolved_uri.clone(),
+          EndpointInfo {
+            mailbox: core_arc.command_sender(),
+            task_handle: None,
+            endpoint_type: EndpointType::Session,
+            endpoint_uri: resolved_uri.clone(),
+            pipe_ids: Some((0, pipe_write_id)),
+            handle_id: pipe_write_id,
+            target_endpoint_uri: Some(udp_endpoint.send_addr.to_string()),
+            is_outbound_connection: true,
+            peer_socket_type: None,
+            connection_iface: connection.clone(),
+          },
+        );
+        pipe_write_id
+      };
 
-        let pipe_write_id_for_attach = {
-          let mut core_s_write = core_arc.core_state.write();
-          let resolved_uri = parsed_uri.clone();
-          core_s_write.pipe_read_id_to_endpoint_uri.insert(
-            pipe_write_id,
-            resolved_uri.clone(),
-          );
-          core_s_write.endpoints.insert(
-            resolved_uri.clone(),
-            EndpointInfo {
-              mailbox: core_arc.command_sender(),
-              task_handle: None,
-              endpoint_type: EndpointType::Session,
-              endpoint_uri: resolved_uri.clone(),
-              pipe_ids: Some((0, pipe_write_id)),
-              handle_id: pipe_write_id,
-              target_endpoint_uri: Some(udp_endpoint.send_addr.to_string()),
-              is_outbound_connection: true,
-              peer_socket_type: None,
-              connection_iface: connection.clone(),
-            },
-          );
-          pipe_write_id
-        };
+      socket_logic.pipe_attached(pipe_write_id_for_attach, 0, None).await;
 
-        socket_logic.pipe_attached(pipe_write_id_for_attach, 0, None).await;
-
-        let _ = reply_tx.send(Ok(()));
-      }
+      let _ = reply_tx.send(Ok(()));
     }
     Err(e) => {
       let _ = reply_tx.send(Err(e));
