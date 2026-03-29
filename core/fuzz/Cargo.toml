@@ -11,9 +11,11 @@ cargo-fuzz = true
 [workspace]
 
 [dependencies]
-libfuzzer-sys = "0.4"
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+arbitrary = { version = "1", features = ["derive"] }
 bytes = "^1.4"
 tokio-util = { version = "^0.7", features = ["codec"] }
+tokio = { version = "^1", features = ["rt", "net", "time", "io-util", "macros"] }
 
 [dependencies.rzmq]
 path = ".."
@@ -58,6 +60,13 @@ bench = false
 [[bin]]
 name = "msg_set_group"
 path = "fuzz_targets/msg_set_group.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "e2e_protocol"
+path = "fuzz_targets/e2e_protocol.rs"
 test = false
 doc = false
 bench = false
