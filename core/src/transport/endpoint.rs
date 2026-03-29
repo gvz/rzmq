@@ -2,13 +2,15 @@ use crate::error::ZmqError;
 use std::path::PathBuf;
 
 /// Represents a parsed and validated endpoint address.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub(crate) enum Endpoint {
   Tcp(String, String), // Store address part (e.g., "my-host:5555") and original URI
   #[cfg(feature = "ipc")]
   Ipc(PathBuf, String), // Store validated PathBuf and original string
   #[cfg(feature = "inproc")]
   Inproc(String), // Store name
+  #[cfg(feature = "udp")]
+  Udp(crate::transport::udp_endpoint::UdpEndpoint, String), // Parsed endpoint and original URI
 }
 
 /// Parses an endpoint string into a structured Endpoint enum.
@@ -51,6 +53,16 @@ pub(crate) fn parse_endpoint(endpoint_str: &str) -> Result<Endpoint, ZmqError> {
           Err(invalid_endpoint_err())
         } else {
           Ok(Endpoint::Inproc(address_part.to_string()))
+        }
+      }
+
+      #[cfg(feature = "udp")]
+      "udp" => {
+        if address_part.is_empty() {
+          Err(invalid_endpoint_err())
+        } else {
+          crate::transport::udp_endpoint::parse_udp_endpoint(address_part, endpoint_str)
+            .map(|ep| Endpoint::Udp(ep, endpoint_str.to_string()))
         }
       }
 

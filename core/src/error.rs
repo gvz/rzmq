@@ -127,6 +127,12 @@ pub enum ZmqError {
   #[error("Resource limit reached (e.g., HWM)")]
   ResourceLimitReached,
 
+  /// The message frame is too large for the transport's maximum datagram size.
+  /// For UDP, the practical limit is 65507 bytes (IPv4 header math).
+  /// Fields: (actual_encoded_length, maximum_allowed_length)
+  #[error("Message too large: {0} bytes exceeds transport maximum of {1} bytes")]
+  MessageTooLarge(usize, usize),
+
   // --- Unsupported Features/Operations ---
   /// The requested transport scheme (e.g., "udp://", "tipc://") is not supported or enabled.
   /// Corresponds to POSIX `EPROTONOSUPPORT`.

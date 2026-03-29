@@ -74,6 +74,17 @@ pub const TCP_CORK: i32 = 1172;
 
 pub const IO_URING_SESSION_ENABLED: i32 = 1175;
 
+// UDP Options
+/// Enable/disable multicast loopback (IP_MULTICAST_LOOP / IPV6_MULTICAST_LOOP).
+/// Value: i32, 0 = disabled, 1 = enabled (default). libzmq: ZMQ_MULTICAST_LOOP.
+#[cfg(feature = "udp")]
+pub const UDP_MULTICAST_LOOP: i32 = 90;
+
+/// Multicast TTL / hop limit (IP_MULTICAST_TTL / IPV6_MULTICAST_HOPS).
+/// Value: i32, range 0–255, default 1. libzmq: ZMQ_MULTICAST_HOPS.
+#[cfg(feature = "udp")]
+pub const UDP_MULTICAST_HOPS: i32 = 91;
+
 pub const DEFAULT_RECONNECT_IVL_MS: u64 = 1000;
 
 /// Holds parsed and validated socket options.
@@ -122,6 +133,8 @@ pub(crate) struct SocketOptions {
   pub curve_options: CurveMechanismSocketOptions,
   #[cfg(feature = "noise_xx")]
   pub noise_xx_options: NoiseXxSocketOptions,
+  #[cfg(feature = "udp")]
+  pub udp: UdpSocketOptions,
 }
 
 impl Default for SocketOptions {
@@ -156,6 +169,8 @@ impl Default for SocketOptions {
       noise_xx_options: NoiseXxSocketOptions::default(),
       #[cfg(feature = "curve")]
       curve_options: CurveMechanismSocketOptions::default(),
+      #[cfg(feature = "udp")]
+      udp: Default::default(),
     }
   }
 }
@@ -211,6 +226,28 @@ pub struct PlainMechanismSocketOptions {
   pub server_role: Option<bool>, // Role override
   pub username: Option<String>,  // Security options stored here?
   pub password: Option<String>,
+}
+
+#[cfg(feature = "udp")]
+#[derive(Debug, Clone)]
+pub struct UdpSocketOptions {
+  /// Whether multicast datagrams loop back to the sender's host.
+  /// Corresponds to IP_MULTICAST_LOOP / IPV6_MULTICAST_LOOP.
+  pub multicast_loop: bool,
+
+  /// TTL for IPv4 multicast / hop limit for IPv6 multicast.
+  /// Corresponds to IP_MULTICAST_TTL / IPV6_MULTICAST_HOPS.
+  pub multicast_hops: u8,
+}
+
+#[cfg(feature = "udp")]
+impl Default for UdpSocketOptions {
+  fn default() -> Self {
+    Self {
+      multicast_loop: true, // OS default is enabled
+      multicast_hops: 1,    // Same-subnet only by default
+    }
+  }
 }
 
 // Config specific to TCP transport, potentially influenced by socket options
@@ -565,6 +602,19 @@ pub(crate) fn apply_core_option_value(
         #[cfg(feature = "io-uring")]
         IO_URING_RCVMULTISHOT => options.io_uring.recv_multishot = parse_bool_option(value)?,
 
+        #[cfg(feature = "udp")]
+        UDP_MULTICAST_LOOP => {
+            options.udp.multicast_loop = parse_bool_option(value)?;
+        }
+        #[cfg(feature = "udp")]
+        UDP_MULTICAST_HOPS => {
+            let v = parse_i32_option(value)?;
+            if !(0..=255).contains(&v) {
+                return Err(ZmqError::InvalidOptionValue(option_id));
+            }
+            options.udp.multicast_hops = v as u8;
+        }
+
         // Options handled by pattern logic (ISocket) or read-only, or not applicable for set_option
         SUBSCRIBE | UNSUBSCRIBE | LAST_ENDPOINT  /* Pattern specific */ | ROUTER_MANDATORY |
         AUTO_DELIMITER | 16 /* ZMQ_TYPE (read-only) */ => return Err(ZmqError::UnsupportedOption(option_id)),
@@ -620,6 +670,11 @@ pub(crate) fn retrieve_core_option_value(
 
         #[cfg(feature = "io-uring")]
         IO_URING_RCVMULTISHOT => Ok((options.io_uring.recv_multishot as i32).to_ne_bytes().to_vec()),
+
+        #[cfg(feature = "udp")]
+        UDP_MULTICAST_LOOP => Ok((options.udp.multicast_loop as i32).to_ne_bytes().to_vec()),
+        #[cfg(feature = "udp")]
+        UDP_MULTICAST_HOPS => Ok((options.udp.multicast_hops as i32).to_ne_bytes().to_vec()),
 
         // Options handled by pattern logic or read-only by nature
         16 /* ZMQ_TYPE */ => Ok((core_s_reader.socket_type as i32).to_ne_bytes().to_vec()),

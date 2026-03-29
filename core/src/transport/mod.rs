@@ -4,6 +4,10 @@ pub mod inproc;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod tcp;
+#[cfg(feature = "udp")]
+pub mod udp;
+#[cfg(feature = "udp")]
+pub mod udp_endpoint;
 
 use std::os::fd::AsRawFd;
 

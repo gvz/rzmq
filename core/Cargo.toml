@@ -14,7 +14,7 @@ keywords = ["zeromq", "messaging", "async", "network", "io_uring"]
 categories = ["asynchronous", "network-programming", "concurrency"]
 
 [features]
-full = ["default", "ipc", "inproc", "plain", "noise_xx", "curve"]
+full = ["default", "ipc", "inproc", "plain", "noise_xx", "curve", "udp"]
 full-linux = ["full", "io-uring"]
 default = ["ipc", "inproc", "plain"]
 
@@ -24,6 +24,7 @@ curve = ["dep:dryoc"]
 ipc = []
 inproc = []
 plain = []
+udp = []
 
 bench_external_clients = []
 
@@ -144,3 +145,7 @@ required-features = ["noise_xx"]
 [[test]]
 name = "security_plain"
 required-features = ["plain"]
+
+[[test]]
+name = "udp_radio_dish"
+required-features = ["udp"]

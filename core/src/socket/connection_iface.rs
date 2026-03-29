@@ -73,6 +73,79 @@ impl ISocketConnection for DummyConnection {
   }
 }
 
+#[cfg(feature = "udp")]
+#[derive(Debug)]
+pub(crate) struct UdpSendConnection {
+  /// The underlying (Tokio) UDP socket.
+  /// Arc so it can be shared if the same local socket sends to multiple targets
+  /// (future: multiple Radio connect endpoints sharing one bound socket).
+  pub(crate) socket: Arc<tokio::net::UdpSocket>,
+
+  /// Destination address: peer (unicast/bcast) or multicast group.
+  pub(crate) send_addr: std::net::SocketAddr,
+
+  /// Stable ID for this connection entry. Derived from context handle counter.
+  pub(crate) connection_id: usize,
+}
+
+#[cfg(feature = "udp")]
+impl UdpSendConnection {
+  pub(crate) fn new(
+    socket: Arc<tokio::net::UdpSocket>,
+    send_addr: std::net::SocketAddr,
+    connection_id: usize,
+  ) -> Self {
+    Self {
+      socket,
+      send_addr,
+      connection_id,
+    }
+  }
+}
+
+#[cfg(feature = "udp")]
+#[async_trait]
+impl ISocketConnection for UdpSendConnection {
+  /// Sends a single pre-encoded RADIO-DISH datagram.
+  ///
+  /// `msgs` must contain exactly one element — the already-encoded frame
+  /// produced by `RadioSocket::encode_radio_frame`:
+  ///   `[ group_len: u8 | group: bytes | payload: bytes ]`
+  ///
+  /// Enforces the 65507-byte datagram limit before sending.
+  async fn send_multipart(&self, msgs: Vec<Msg>) -> Result<(), ZmqError> {
+    if msgs.len() != 1 {
+      return Err(ZmqError::InvalidState(
+        "UDP Radio-Dish requires exactly one frame per send",
+      ));
+    }
+    let data = msgs[0].data().unwrap_or(&[]);
+    const UDP_MAX: usize = 65507;
+    if data.len() > UDP_MAX {
+      return Err(ZmqError::MessageTooLarge(data.len(), UDP_MAX));
+    }
+    self
+      .socket
+      .send_to(data, self.send_addr)
+      .await
+      .map(|_| ())
+      .map_err(ZmqError::from)
+  }
+
+  async fn close_connection(&self) -> Result<(), ZmqError> {
+    // UDP is connectionless; no teardown needed.
+    Ok(())
+  }
+
+  fn get_connection_id(&self) -> usize {
+    self.connection_id
+  }
+
+  fn as_any(&self) -> &dyn Any {
+    self
+  }
+}
+
 #[cfg(feature = "io-uring")]
 pub(crate) struct UringFdConnection {
   fd: RawFd,
