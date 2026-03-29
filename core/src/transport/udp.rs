@@ -19,6 +19,7 @@ const UDP_MAX_DATAGRAM: usize = 65535;
 
 pub(crate) struct UdpReceiveActor {
   handle: usize,
+  parent_socket_id: usize,
   endpoint_uri: String,
   socket: Arc<UdpSocket>,
   socket_logic: Arc<dyn ISocket>,
@@ -132,6 +133,7 @@ impl UdpReceiveActor {
 
     let actor = UdpReceiveActor {
       handle,
+      parent_socket_id,
       endpoint_uri: resolved_uri.clone(),
       socket: udp,
       socket_logic,
@@ -151,7 +153,7 @@ impl UdpReceiveActor {
       self.handle,
       ActorType::Listener,
       Some(self.endpoint_uri.clone()),
-      None,
+      Some(self.parent_socket_id),
     );
 
     let mut buf = vec![0u8; UDP_MAX_DATAGRAM];
