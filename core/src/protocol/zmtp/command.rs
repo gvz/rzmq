@@ -44,8 +44,9 @@ impl ZmtpCommand {
     let body = msg.data()?; // Get command body bytes
 
     // Check command name (first part, length-prefixed)
-    if body.starts_with(b"\x04PING") && body.len() >= 5 {
+    if body.starts_with(b"\x04PING") && body.len() >= 7 {
       // PING command format: <length=4>PING<TTL(2)><Context(0+)>
+      // Requires at least 7 bytes: 1 (len prefix) + 4 (PING) + 2 (TTL)
       // Extract context after "PING" + TTL
       let context = Bytes::copy_from_slice(&body[5 + 2..]);
       Some(ZmtpCommand::Ping(context))
@@ -204,7 +205,7 @@ impl ZmtpReady {
     // Prepend command name (length prefixed)
     let name = ZMTP_CMD_READY_NAME;
     body.put_u8(name.len() as u8); // Not ZMTP standard? Check spec 4.1 Command frame
-    // Re-checking: Yes, command name is length-prefixed string in body.
+                                   // Re-checking: Yes, command name is length-prefixed string in body.
     body.put_slice(name);
     // Append encoded properties
     cmd.encode_properties(&mut body);
