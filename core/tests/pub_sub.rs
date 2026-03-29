@@ -1,6 +1,6 @@
 // tests/pub_sub.rs
 
-use rzmq::socket::SocketEvent;
+use rzmq::socket::{SocketEvent, SUBSCRIBE, UNSUBSCRIBE};
 use rzmq::{Msg, SocketType, ZmqError};
 use serial_test::serial;
 use std::time::Duration;

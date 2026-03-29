@@ -1,5 +1,6 @@
 #![allow(private_interfaces)]
 
+use crate::context::Context;
 use crate::error::ZmqError;
 #[cfg(feature = "io-uring")]
 use crate::io_uring_backend::ops::UringOpRequest;
@@ -7,6 +8,7 @@ use crate::message::Msg;
 use crate::runtime::SystemEvent;
 use crate::socket::events::MonitorSender;
 use crate::socket::options::SocketOptions;
+use crate::socket::SocketEvent;
 #[cfg(feature = "io-uring")]
 use crate::uring;
 

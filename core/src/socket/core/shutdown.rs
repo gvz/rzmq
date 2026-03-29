@@ -4,7 +4,6 @@ use crate::socket::ISocket;
 use crate::socket::connection_iface::ISocketConnection;
 use crate::socket::core::state::{CoreState, EndpointType, ShutdownCoordinator, ShutdownPhase};
 use crate::socket::core::{pipe_manager, SocketCore};
-use crate::socket::ISocket;
 
 use std::collections::HashMap;
 use std::sync::Arc;

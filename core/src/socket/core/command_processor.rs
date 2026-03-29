@@ -486,6 +486,10 @@ async fn handle_user_bind(
         }
       }
     }
+    #[cfg(feature = "udp")]
+    Ok(Endpoint::Udp(ref udp_endpoint, ref uri_from_parse)) => {
+      bind_result = Err(ZmqError::UnsupportedTransport("UDP bind not yet implemented".to_string()));
+    }
     Err(e) => bind_result = Err(e), // Error from parse_endpoint
   };
 
@@ -546,6 +550,10 @@ async fn handle_user_connect(
       tokio::spawn(async move {
         inproc::connect_inproc(name_clone_for_task, core_arc_clone_for_task, reply_tx).await;
       });
+    }
+    #[cfg(feature = "udp")]
+    Ok(Endpoint::Udp(_, _)) => {
+      let _ = reply_tx.send(Err(ZmqError::UnsupportedTransport("UDP connect not yet implemented".to_string())));
     }
     Err(e) => {
       let _ = reply_tx.send(Err(e));
@@ -620,6 +628,10 @@ pub(crate) async fn respawn_connecter_actor(
     }
     Ok(Endpoint::Inproc(_)) => {
       tracing::warn!(handle = core_handle, %target_uri, "Inproc connections are not respawned via Connecter actor mechanism.");
+    }
+    #[cfg(feature = "udp")]
+    Ok(Endpoint::Udp(_, _)) => {
+      tracing::warn!(handle = core_handle, %target_uri, "UDP connections are not respawned via Connecter actor mechanism.");
     }
     Err(err) => {
       tracing::error!(handle = core_handle, %target_uri, error = %err, "Failed to parse endpoint for respawning connecter.");
