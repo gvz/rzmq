@@ -111,9 +111,12 @@ impl ISocketConnection for UdpSendConnection {
       ));
     }
     let data = msgs[0].data().unwrap_or(&[]);
-    const UDP_MAX: usize = 65507;
-    if data.len() > UDP_MAX {
-      return Err(ZmqError::MessageTooLarge(data.len(), UDP_MAX));
+    // Safety guard: the encoded frame (group_len prefix + group + payload) must fit
+    // in a UDP datagram. RadioSocket::send validates payload size with a user-facing
+    // error before encoding; this catches anything that slips through.
+    const UDP_MAX_DATAGRAM: usize = 65507;
+    if data.len() > UDP_MAX_DATAGRAM {
+      return Err(ZmqError::MessageTooLarge(data.len(), UDP_MAX_DATAGRAM));
     }
 
     match self.send_timeout {

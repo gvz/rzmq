@@ -1,10 +1,10 @@
-use crate::Msg;
 use crate::runtime::MailboxSender;
-use crate::socket::SocketEvent;
 use crate::socket::connection_iface::ISocketConnection;
 use crate::socket::events::MonitorSender;
 use crate::socket::options::SocketOptions;
 use crate::socket::types::SocketType;
+use crate::socket::SocketEvent;
+use crate::Msg;
 
 use fibre::mpmc::AsyncSender;
 use std::collections::{HashMap, HashSet};
@@ -127,6 +127,12 @@ pub(crate) struct CoreState {
   /// Used to find the `EndpointInfo` when a message/event arrives on a "pipe" (actual or conceptual).
   pub pipe_read_id_to_endpoint_uri: HashMap<usize, String>,
 
+  /// Maps a pipe_write_id to the endpoint_uri for write-only connections that have no read pipe.
+  /// Currently used exclusively by the UDP Radio connect path, where the socket only sends
+  /// datagrams and never receives on this pipe. A write_id of 0 is never valid and will not
+  /// appear in this map.
+  pub pipe_write_id_to_endpoint_uri: HashMap<usize, String>,
+
   /// For io_uring path: Maps a RawFd directly to the endpoint_uri.
   /// Used when UringFd* commands/events (which carry RawFd) arrive at SocketCore.
   #[cfg(feature = "io-uring")]
@@ -149,6 +155,7 @@ impl CoreState {
       endpoints: HashMap::new(),
       reconnect_states: HashMap::new(),
       pipe_read_id_to_endpoint_uri: HashMap::new(),
+      pipe_write_id_to_endpoint_uri: HashMap::new(),
       #[cfg(feature = "io-uring")]
       uring_fd_to_endpoint_uri: HashMap::new(),
       #[cfg(feature = "inproc")]
@@ -210,7 +217,22 @@ impl CoreState {
       );
     }
 
-    tx_removed || reader_removed || map_removed
+    // Also clear the write-side map entry. For ordinary bidirectional connections
+    // this entry is absent (no-op). For write-only connections (UDP Radio connect)
+    // this is the authoritative map entry to clean up.
+    let write_map_removed = self
+      .pipe_write_id_to_endpoint_uri
+      .remove(&pipe_write_id)
+      .is_some();
+    if write_map_removed {
+      tracing::trace!(
+        core_handle = self.handle,
+        pipe_id = pipe_write_id,
+        "CoreState: Removed pipe_write_id_to_endpoint_uri mapping"
+      );
+    }
+
+    tx_removed || reader_removed || map_removed || write_map_removed
   }
 
   pub(crate) fn send_monitor_event(&self, event: SocketEvent) {

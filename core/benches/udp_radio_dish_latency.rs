@@ -101,12 +101,16 @@ fn calculate_stats(latencies: &[Duration]) {
   sorted.sort();
 
   let n = sorted.len();
+  if n == 0 {
+    println!("\n=== UDP RADIO-DISH: no samples collected ===");
+    return;
+  }
+
   let min = sorted[0];
   let max = sorted[n - 1];
   let mean = sorted.iter().sum::<Duration>() / n as u32;
-  let p50 = sorted[n / 2];
-  let p99 = sorted[(n as f64 * 0.99) as usize];
-  let p999 = sorted[(n as f64 * 0.999) as usize];
+  let p50 = sorted[((n as f64 * 0.50) as usize).min(n - 1)];
+  let p99 = sorted[((n as f64 * 0.99) as usize).min(n - 1)];
 
   println!("\n=== UDP RADIO-DISH One-Way Latency ({:?}) ===", mean);
   println!("samples: {}", n);
@@ -115,7 +119,10 @@ fn calculate_stats(latencies: &[Duration]) {
   println!("mean:    {:?}", mean);
   println!("p50:     {:?}", p50);
   println!("p99:     {:?}", p99);
-  println!("p999:    {:?}", p999);
+  if n >= 1000 {
+    let p999 = sorted[((n as f64 * 0.999) as usize).min(n - 1)];
+    println!("p999:    {:?}", p999);
+  }
 }
 
 fn latency_benchmark(c: &mut Criterion) {

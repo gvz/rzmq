@@ -587,6 +587,11 @@ pub(crate) async fn perform_final_pipe_cleanup(
       .write()
       .pipe_read_id_to_endpoint_uri
       .clear();
+    core_arc
+      .core_state
+      .write()
+      .pipe_write_id_to_endpoint_uri
+      .clear();
     #[cfg(feature = "io-uring")]
     {
       for fd_to_unreg in core_arc.core_state.read().uring_fd_to_endpoint_uri.keys() {

@@ -669,7 +669,10 @@ async fn handle_user_connect(
       let pipe_write_id_for_attach = {
         let mut core_s_write = core_arc.core_state.write();
         let resolved_uri = parsed_uri.clone();
-        core_s_write.pipe_read_id_to_endpoint_uri.insert(
+        // UDP Radio connect is write-only: register in the write-side map, not the
+        // read-side map. pipe_read_id_to_endpoint_uri is reserved for connections
+        // that have an actual receive pipe.
+        core_s_write.pipe_write_id_to_endpoint_uri.insert(
           pipe_write_id,
           resolved_uri.clone(),
         );
@@ -680,7 +683,9 @@ async fn handle_user_connect(
             task_handle: None,
             endpoint_type: EndpointType::Session,
             endpoint_uri: resolved_uri.clone(),
-            pipe_ids: Some((0, pipe_write_id)),
+            // (write_id, read_id): read_id is 0, the sentinel for "no read pipe"
+            // on this write-only UDP Radio connect connection.
+            pipe_ids: Some((pipe_write_id, 0)),
             handle_id: pipe_write_id,
             target_endpoint_uri: Some(udp_endpoint.send_addr.to_string()),
             is_outbound_connection: true,
@@ -691,7 +696,10 @@ async fn handle_user_connect(
         pipe_write_id
       };
 
-      socket_logic.pipe_attached(pipe_write_id_for_attach, 0, None).await;
+      // pipe_read_id=0 is the sentinel for a write-only connection (no receive pipe).
+      // pipe_write_id carries the real ID. RadioSocket::pipe_attached uses this
+      // convention to look up the endpoint via pipe_write_id_to_endpoint_uri.
+      socket_logic.pipe_attached(0, pipe_write_id_for_attach, None).await;
 
       let _ = reply_tx.send(Ok(()));
     }

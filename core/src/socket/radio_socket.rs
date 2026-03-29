@@ -91,6 +91,18 @@ impl ISocket for RadioSocket {
     }
 
     let payload = msg.data();
+
+    // Validate payload size before encoding so the error reflects what the user passed.
+    // UDP datagram limit is 65507 bytes (65535 - 20 IP header - 8 UDP header).
+    // Framing overhead is 1 byte (group_len prefix) + group.len() bytes.
+    const UDP_MAX_DATAGRAM: usize = 65507;
+    let framing_overhead = 1 + group.len();
+    let max_payload = UDP_MAX_DATAGRAM - framing_overhead;
+    let payload_len = payload.map_or(0, |p| p.len());
+    if payload_len > max_payload {
+      return Err(ZmqError::MessageTooLarge(payload_len, max_payload));
+    }
+
     let wire_msg = Self::encode_radio_frame(group, payload);
 
     tracing::debug!(
@@ -201,19 +213,31 @@ impl ISocket for RadioSocket {
   async fn pipe_attached(
     &self,
     pipe_read_id: usize,
-    _pipe_write_id: usize,
+    pipe_write_id: usize,
     _peer_identity: Option<&[u8]>,
   ) {
-    let endpoint_uri_option = self
-      .core
-      .core_state
-      .read()
-      .pipe_read_id_to_endpoint_uri
-      .get(&pipe_read_id)
-      .cloned();
+    // For bidirectional connections (TCP/inproc), pipe_read_id is a real ID and the
+    // endpoint is registered in pipe_read_id_to_endpoint_uri.
+    //
+    // For write-only connections (UDP Radio connect), pipe_read_id is 0 — the sentinel
+    // meaning "no read pipe" — and pipe_write_id carries the real ID. The endpoint is
+    // registered in pipe_write_id_to_endpoint_uri. The same key (pipe_read_id, which is
+    // 0 for write-only) is stored in pipe_read_to_endpoint_uri below so that
+    // pipe_detached() receives the matching key and removes it correctly.
+    let endpoint_uri_option = {
+      let cs = self.core.core_state.read();
+      if pipe_read_id != 0 {
+        cs.pipe_read_id_to_endpoint_uri.get(&pipe_read_id).cloned()
+      } else {
+        // Write-only connection: look up by write_id in the write-side map.
+        cs.pipe_write_id_to_endpoint_uri.get(&pipe_write_id).cloned()
+      }
+    };
 
     if let Some(endpoint_uri) = endpoint_uri_option {
-      tracing::debug!(handle = self.core.handle, pipe_read_id, uri = %endpoint_uri, "RADIO attaching connection");
+      tracing::debug!(handle = self.core.handle, pipe_read_id, pipe_write_id, uri = %endpoint_uri, "RADIO attaching connection");
+      // Keyed by pipe_read_id (0 for write-only). pipe_detached() is called with the
+      // same id, ensuring the entry is found and removed correctly.
       self
         .pipe_read_to_endpoint_uri
         .write()
@@ -223,7 +247,8 @@ impl ISocket for RadioSocket {
       tracing::warn!(
         handle = self.core.handle,
         pipe_read_id,
-        "RADIO pipe_attached: Could not find endpoint_uri for pipe_read_id. Distributor not updated."
+        pipe_write_id,
+        "RADIO pipe_attached: Could not find endpoint_uri. Distributor not updated."
       );
     }
   }
@@ -239,6 +264,9 @@ impl ISocket for RadioSocket {
   }
 
   async fn pipe_detached(&self, pipe_read_id: usize) {
+    // For write-only connections (UDP Radio connect), pipe_read_id is 0 (the sentinel).
+    // This matches the key stored in pipe_read_to_endpoint_uri during pipe_attached(),
+    // so the removal below works correctly for both bidirectional and write-only pipes.
     tracing::debug!(
       handle = self.core.handle,
       pipe_read_id,
