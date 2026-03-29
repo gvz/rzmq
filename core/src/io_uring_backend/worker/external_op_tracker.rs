@@ -2,8 +2,8 @@
 
 use fibre::oneshot;
 
-use crate::io_uring_backend::ops::{ProtocolConfig, UringOpCompletion, UserData};
 use crate::ZmqError;
+use crate::io_uring_backend::ops::{ProtocolConfig, UringOpCompletion, UserData};
 use std::collections::HashMap;
 use std::os::unix::io::RawFd;
 

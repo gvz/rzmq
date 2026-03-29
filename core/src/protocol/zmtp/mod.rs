@@ -5,4 +5,4 @@ pub mod manual_parser;
 
 pub use codec::ZmtpCodec;
 pub use command::*;
-pub use greeting::{ZmtpGreeting, GREETING_LENGTH};
+pub use greeting::{GREETING_LENGTH, ZmtpGreeting};

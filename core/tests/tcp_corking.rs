@@ -1,6 +1,6 @@
 use rzmq::{
-  socket::options::{SNDTIMEO, TCP_CORK},
   Context, Msg, MsgFlags, SocketType, ZmqError,
+  socket::options::{SNDTIMEO, TCP_CORK},
 };
 use std::time::Duration;
 
@@ -24,7 +24,9 @@ async fn setup_pair_with_cork(
       "Setting TCP_CORK_OPT={} on SENDER for endpoint {}",
       enable_cork_on_sender, endpoint
     );
-    sender.set_option_raw(TCP_CORK, &(1i32).to_ne_bytes()).await?;
+    sender
+      .set_option_raw(TCP_CORK, &(1i32).to_ne_bytes())
+      .await?;
   }
 
   receiver.bind(endpoint).await?;
@@ -192,7 +194,9 @@ async fn test_tcp_cork_ping_pong_interaction() -> Result<(), ZmqError> {
   assert_eq!(rec_initial.data().unwrap(), b"InitialData");
   println!("Initial message exchanged.");
 
-  println!("SENDER: Pausing to potentially allow heartbeat PINGs (if engine is configured for them)...");
+  println!(
+    "SENDER: Pausing to potentially allow heartbeat PINGs (if engine is configured for them)..."
+  );
   // To make this test more meaningful for PINGs, HEARTBEAT_IVL would need to be set
   // on the PUSH socket to a value smaller than this sleep, e.g., 200ms.
   // For now, this just tests if corking state is okay after a pause.
@@ -215,7 +219,9 @@ async fn test_tcp_cork_ping_pong_interaction() -> Result<(), ZmqError> {
       println!("RECEIVER: Received second message successfully.");
     }
     Err(ZmqError::ResourceLimitReached) => {
-      println!("SENDER: Send after pause resulted in ResourceLimitReached (EAGAIN), this can happen if PULL is slow or HWM is small.");
+      println!(
+        "SENDER: Send after pause resulted in ResourceLimitReached (EAGAIN), this can happen if PULL is slow or HWM is small."
+      );
       // This is an acceptable outcome if PUSH pipe is full.
       // To make the test pass consistently, try to receive the first message, then pause, then send/recv second.
       // The current structure is fine for testing if corking breaks things.
@@ -235,7 +241,7 @@ async fn test_tcp_cork_state_management_with_more_flag() -> Result<(), ZmqError>
   println!("\n--- Starting test_tcp_cork_state_management_with_more_flag ---");
   let ctx = common::test_context();
   let endpoint = "tcp://127.0.0.1:5805"; // Unique port
-                                         // Enable cork on sender. SNDTIMEO is not set to 0 here initially.
+  // Enable cork on sender. SNDTIMEO is not set to 0 here initially.
   let (push, pull) = setup_pair_with_cork(&ctx, endpoint, true).await?;
 
   // Message 1 (single part, should set and unset cork)

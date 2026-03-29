@@ -1,6 +1,6 @@
 use rzmq::{
-  socket::{LINGER, PLAIN_PASSWORD, PLAIN_SERVER, PLAIN_USERNAME},
   Context, Msg, SocketType, ZmqError,
+  socket::{LINGER, PLAIN_PASSWORD, PLAIN_SERVER, PLAIN_USERNAME},
 };
 use std::time::Duration;
 
@@ -24,7 +24,10 @@ async fn main() -> Result<(), ZmqError> {
 
   println!("Starting PLAIN REQ-REP example...");
   println!("Server will bind to: {}", bind_addr);
-  println!("Client will connect with user: '{}', pass: '{}'", username, password);
+  println!(
+    "Client will connect with user: '{}', pass: '{}'",
+    username, password
+  );
 
   // 1. Create Context
   let ctx = match Context::new() {
@@ -50,13 +53,9 @@ async fn main() -> Result<(), ZmqError> {
   println!("[Client] Setting LINGER option...");
   client_socket.set_option(LINGER, 0i32).await?; // Set LINGER option to 0 for quick close
   println!("[Client] Setting PLAIN_USERNAME to '{}'...", username);
-  client_socket
-    .set_option(PLAIN_USERNAME, username)
-    .await?;
+  client_socket.set_option(PLAIN_USERNAME, username).await?;
   println!("[Client] Setting PLAIN_PASSWORD to '{}'...", password);
-  client_socket
-    .set_option(PLAIN_PASSWORD, password)
-    .await?;
+  client_socket.set_option(PLAIN_PASSWORD, password).await?;
   println!("[Client] Connecting to {}...", bind_addr);
   client_socket.connect(bind_addr).await?;
   println!("[Client] Connected successfully.");
@@ -103,7 +102,10 @@ async fn main() -> Result<(), ZmqError> {
     if let Err(e) = client_socket.send(request_msg).await {
       eprintln!("[Client] Error sending request: {}", e);
       if let Err(e_close) = client_socket.close().await {
-        eprintln!("[Client] Error closing client socket after send error: {}", e_close);
+        eprintln!(
+          "[Client] Error closing client socket after send error: {}",
+          e_close
+        );
       }
       return;
     }

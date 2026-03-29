@@ -1,5 +1,8 @@
 use crate::error::ZmqError;
-use fibre::{mpmc::{bounded_async, AsyncReceiver, AsyncSender}, TryRecvError, TrySendError, RecvError};
+use fibre::{
+  RecvError, TryRecvError, TrySendError,
+  mpmc::{AsyncReceiver, AsyncSender, bounded_async},
+};
 
 #[derive(Debug)]
 pub(crate) enum PushError<T: Send + 'static> {
@@ -29,7 +32,11 @@ impl<T: Send + 'static> FairQueue<T> {
 
   /// Called when a pipe delivering messages to this queue is attached.
   pub fn pipe_attached(&self, pipe_read_id: usize) {
-    tracing::trace!(pipe_id = pipe_read_id, hwm = self.hwm, "FairQueue pipe attached");
+    tracing::trace!(
+      pipe_id = pipe_read_id,
+      hwm = self.hwm,
+      "FairQueue pipe attached"
+    );
   }
 
   /// Called when a pipe delivering messages to this queue is detached.
@@ -73,7 +80,9 @@ impl<T: Send + 'static> FairQueue<T> {
       Err(TryRecvError::Empty) => Ok(None),
       Err(TryRecvError::Disconnected) => {
         tracing::error!("FairQueue try_recv error: Channel closed");
-        Err(ZmqError::Internal("FairQueue channel closed unexpectedly".into()))
+        Err(ZmqError::Internal(
+          "FairQueue channel closed unexpectedly".into(),
+        ))
       }
     }
   }

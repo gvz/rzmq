@@ -278,7 +278,9 @@ async fn test_push_sndtimeo_positive_no_peer() -> Result<(), ZmqError> {
   // Set a short positive send timeout on PUSH
   let snd_timeout_val = SEND_PEER_WAIT_TIMEOUT.as_millis() as i32;
   println!("Setting SNDTIMEO={}ms on PUSH...", snd_timeout_val);
-  push.set_option_raw(SNDTIMEO, &snd_timeout_val.to_ne_bytes()).await?;
+  push
+    .set_option_raw(SNDTIMEO, &snd_timeout_val.to_ne_bytes())
+    .await?;
   println!("Option set.");
 
   // Connect PUSH - this setup succeeds asynchronously, but no listener exists yet
@@ -296,7 +298,10 @@ async fn test_push_sndtimeo_positive_no_peer() -> Result<(), ZmqError> {
   let start_time = std::time::Instant::now();
   let send1_result = push.send(Msg::from_static(b"Message 1")).await;
   let elapsed = start_time.elapsed();
-  println!("PUSH send result: {:?}, elapsed: {:?}", send1_result, elapsed);
+  println!(
+    "PUSH send result: {:?}, elapsed: {:?}",
+    send1_result, elapsed
+  );
 
   assert!(
     matches!(send1_result, Err(ZmqError::Timeout)), // Expect Timeout because SNDTIMEO > 0 and no peer available
@@ -305,7 +310,8 @@ async fn test_push_sndtimeo_positive_no_peer() -> Result<(), ZmqError> {
   );
   // Optional: Check if elapsed time is roughly the timeout duration
   assert!(
-    elapsed >= SEND_PEER_WAIT_TIMEOUT && elapsed < SEND_PEER_WAIT_TIMEOUT + Duration::from_millis(100),
+    elapsed >= SEND_PEER_WAIT_TIMEOUT
+      && elapsed < SEND_PEER_WAIT_TIMEOUT + Duration::from_millis(100),
     "Elapsed time {:?} not close to timeout {:?}",
     elapsed,
     SEND_PEER_WAIT_TIMEOUT
@@ -362,7 +368,10 @@ async fn test_pull_rcvtimeo() -> Result<(), ZmqError> {
   let rcv_timeout_ms = 150i32;
   println!("Setting RCVTIMEO={}ms on PULL...", rcv_timeout_ms);
   pull
-    .set_option_raw(rzmq::socket::options::RCVTIMEO, &rcv_timeout_ms.to_ne_bytes())
+    .set_option_raw(
+      rzmq::socket::options::RCVTIMEO,
+      &rcv_timeout_ms.to_ne_bytes(),
+    )
     .await?;
   println!("Option set.");
 

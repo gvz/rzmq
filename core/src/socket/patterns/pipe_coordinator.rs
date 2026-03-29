@@ -1,6 +1,6 @@
 use parking_lot::RwLock;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{collections::HashMap, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 

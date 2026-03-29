@@ -1,9 +1,9 @@
 #![cfg(feature = "io-uring")]
 #![allow(private_interfaces)]
 
+use crate::ZmqError;
 use crate::message::Msg;
 use crate::socket::ZmtpEngineConfig;
-use crate::ZmqError;
 
 use std::fmt;
 use std::net::SocketAddr;

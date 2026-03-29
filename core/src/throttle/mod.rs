@@ -43,8 +43,8 @@ pub mod types;
 use types::ThrottleStateView;
 pub use types::{AdaptiveThrottleConfig, Direction};
 
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
 use atomic_float::AtomicF64;
 use rand::random;

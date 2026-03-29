@@ -5,7 +5,6 @@ use crate::error::ZmqError;
 use crate::message::Msg;
 use crate::runtime::SystemEvent;
 use crate::socket::core::{EndpointInfo, EndpointType, SocketCore};
-use crate::socket::SocketEvent;
 
 use fibre::mpmc::bounded_async;
 use fibre::oneshot;

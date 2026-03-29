@@ -1,4 +1,5 @@
 use rzmq::{
+  SocketType, ZmqError,
   socket::{
     options::{RECONNECT_IVL}, SocketEvent, SNDTIMEO
   }, SocketType, ZmqError

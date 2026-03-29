@@ -1,10 +1,10 @@
 use crate::error::ZmqError;
 use crate::message::Msg;
 use crate::runtime::{Command, MailboxSender};
+use crate::socket::ISocket;
 use crate::socket::core::SocketCore;
 use crate::socket::patterns::Distributor;
-use crate::socket::ISocket;
-use crate::{delegate_to_core, Blob, MsgFlags};
+use crate::{Blob, MsgFlags, delegate_to_core};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -68,7 +68,9 @@ impl ISocket for PubSocket {
     }
     let payload_preview_str = msg
       .data()
-      .map(|d| String::from_utf8_lossy(&d.iter().take(20).copied().collect::<Vec<_>>()).into_owned())
+      .map(|d| {
+        String::from_utf8_lossy(&d.iter().take(20).copied().collect::<Vec<_>>()).into_owned()
+      })
       .unwrap_or_else(|| "<empty_payload>".to_string());
 
     tracing::debug!(
@@ -101,7 +103,9 @@ impl ISocket for PubSocket {
   }
 
   async fn recv(&self) -> Result<Msg, ZmqError> {
-    Err(ZmqError::InvalidState("PUB sockets cannot receive messages"))
+    Err(ZmqError::InvalidState(
+      "PUB sockets cannot receive messages",
+    ))
   }
 
   async fn send_multipart(&self, mut frames: Vec<Msg>) -> Result<(), ZmqError> {
@@ -149,7 +153,9 @@ impl ISocket for PubSocket {
   }
 
   async fn recv_multipart(&self) -> Result<Vec<Msg>, ZmqError> {
-    Err(ZmqError::UnsupportedFeature("PUB sockets cannot receive messages"))
+    Err(ZmqError::UnsupportedFeature(
+      "PUB sockets cannot receive messages",
+    ))
   }
 
   async fn set_pattern_option(&self, option: i32, _value: &[u8]) -> Result<(), ZmqError> {
@@ -208,7 +214,11 @@ impl ISocket for PubSocket {
   }
 
   async fn pipe_detached(&self, pipe_read_id: usize) {
-    tracing::debug!(handle = self.core.handle, pipe_read_id, "PUB detaching connection");
+    tracing::debug!(
+      handle = self.core.handle,
+      pipe_read_id,
+      "PUB detaching connection"
+    );
 
     let maybe_endpoint_uri = self.pipe_read_to_endpoint_uri.write().remove(&pipe_read_id); // Guard dropped
 

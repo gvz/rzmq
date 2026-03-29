@@ -3,7 +3,7 @@
 use crate::message::Msg;
 use crate::runtime::mailbox::MailboxSender as SessionCommandMailboxSender;
 use crate::socket::connection_iface::ISocketConnection;
-use crate::{error::ZmqError, Blob};
+use crate::{Blob, error::ZmqError};
 
 use std::fmt;
 #[cfg(feature = "io-uring")]

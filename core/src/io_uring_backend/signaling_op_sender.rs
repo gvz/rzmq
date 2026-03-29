@@ -1,13 +1,13 @@
 #![cfg(feature = "io-uring")]
 
 use crate::io_uring_backend::ops::UringOpRequest;
-use fibre::{mpmc::AsyncSender, SendError, TrySendError};
+use fibre::{SendError, TrySendError, mpmc::AsyncSender};
 use std::{os::fd::AsRawFd, usize};
 
 #[derive(Clone)] // EventFD is Cloneable
 pub struct SignalingOpSender {
   op_tx: AsyncSender<UringOpRequest>, // Store the async sender directly
-  event_fd: eventfd::EventFD,              // Clone of the UringWorker's EventFD
+  event_fd: eventfd::EventFD,         // Clone of the UringWorker's EventFD
 }
 
 impl SignalingOpSender {

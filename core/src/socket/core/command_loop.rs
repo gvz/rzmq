@@ -1,14 +1,14 @@
+use crate::Command;
 use crate::error::ZmqError;
 use crate::runtime::{ActorDropGuard, ActorType, MailboxReceiver, SystemEvent};
-use crate::socket::core::state::ShutdownPhase;
-use crate::socket::core::{command_processor, event_processor, shutdown, SocketCore};
 use crate::socket::ISocket;
-use crate::Command;
+use crate::socket::core::state::ShutdownPhase;
+use crate::socket::core::{SocketCore, command_processor, event_processor, shutdown};
 
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio::time::{interval, Interval};
+use tokio::time::{Interval, interval};
 
 /// The main actor loop for `SocketCore`.
 /// It listens for user commands on its mailbox and system events on the event bus.

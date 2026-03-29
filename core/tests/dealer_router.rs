@@ -36,7 +36,10 @@ async fn test_dealer_router_tcp_basic() -> Result<(), ZmqError> {
       !id_frame.data().unwrap().is_empty(),
       "Identity frame should not be empty"
     );
-    assert!(!payload_frame.is_more(), "Payload frame should not have MORE flag");
+    assert!(
+      !payload_frame.is_more(),
+      "Payload frame should not have MORE flag"
+    );
     assert_eq!(payload_frame.data().unwrap(), b"RequestPayload");
     println!("ROUTER received identity + payload");
 
@@ -66,7 +69,10 @@ async fn test_dealer_router_tcp_basic() -> Result<(), ZmqError> {
     // Let's test this assumption.
 
     assert_eq!(reply_payload.data().unwrap(), b"ReplyPayload");
-    assert!(!reply_payload.is_more(), "Dealer reply should not have MORE flag");
+    assert!(
+      !reply_payload.is_more(),
+      "Dealer reply should not have MORE flag"
+    );
     println!("DEALER received reply payload");
   }
   ctx.term().await?;

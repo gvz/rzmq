@@ -20,12 +20,17 @@ impl CorePipeManagerX {
   }
 
   /// Attaches the pipes and routing information received from SocketCore.
-  pub(crate) fn attach(&mut self, rx_from_core: AsyncReceiver<Vec<Msg>>, core_pipe_read_id_for_incoming_routing: usize) {
+  pub(crate) fn attach(
+    &mut self,
+    rx_from_core: AsyncReceiver<Vec<Msg>>,
+    core_pipe_read_id_for_incoming_routing: usize,
+  ) {
     if self.state.is_attached {
       return;
     }
     self.state.rx_from_core = Some(rx_from_core);
-    self.state.core_pipe_read_id_for_incoming_routing = Some(core_pipe_read_id_for_incoming_routing);
+    self.state.core_pipe_read_id_for_incoming_routing =
+      Some(core_pipe_read_id_for_incoming_routing);
     self.state.is_attached = true;
   }
 

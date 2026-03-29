@@ -81,7 +81,7 @@ impl Distributor {
 
       if let Some(conn_iface) = conn_iface_opt {
         let msg_clone = msg.clone(); // Clone message for each send
-                                     // ISocketConnection.send_message() handles SNDTIMEO internally
+        // ISocketConnection.send_message() handles SNDTIMEO internally
         match conn_iface.send_message(msg_clone).await {
           Ok(()) => {
             tracing::trace!(handle = core_handle, uri = %uri_to_send, "Distributor: send_message successful for URI.");

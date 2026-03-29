@@ -1,4 +1,4 @@
-use rzmq::{socket::options as rzmq_options, Context, Msg, SocketType, ZmqError};
+use rzmq::{Context, Msg, SocketType, ZmqError, socket::options as rzmq_options};
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -37,14 +37,21 @@ async fn run_publisher(ctx: Context) -> Result<(), ZmqError> {
   Ok(())
 }
 
-async fn run_subscriber(ctx: Context, identity: &str, topic_to_subscribe: &str) -> Result<(), ZmqError> {
+async fn run_subscriber(
+  ctx: Context,
+  identity: &str,
+  topic_to_subscribe: &str,
+) -> Result<(), ZmqError> {
   let sub_socket = ctx.socket(SocketType::Sub)?;
   println!("[SUB {}] Connecting to {}...", identity, PUB_ADDR);
   sub_socket.connect(PUB_ADDR).await?;
   println!("[SUB {}] Connected.", identity);
 
   // Subscribe to the specified topic prefix
-  println!("[SUB {}] Subscribing to topic: '{}'", identity, topic_to_subscribe);
+  println!(
+    "[SUB {}] Subscribing to topic: '{}'",
+    identity, topic_to_subscribe
+  );
   sub_socket
     .set_option_raw(rzmq_options::SUBSCRIBE, topic_to_subscribe.as_bytes())
     .await?;
@@ -68,7 +75,9 @@ async fn run_subscriber(ctx: Context, identity: &str, topic_to_subscribe: &str) 
 
 #[tokio::main]
 async fn main() -> Result<(), ZmqError> {
-  tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+  tracing_subscriber::fmt()
+    .with_max_level(tracing::Level::INFO)
+    .init();
 
   println!("--- Publish-Subscribe Example ---");
   let ctx = Context::new()?;

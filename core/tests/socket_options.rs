@@ -12,7 +12,10 @@ async fn test_option_last_endpoint_tcp_ephemeral_port() -> Result<(), ZmqError> 
   let pull_socket = ctx.socket(SocketType::Pull)?;
 
   let bind_uri_ephemeral = "tcp://127.0.0.1:0";
-  println!("Binding PULL socket to ephemeral endpoint: {}", bind_uri_ephemeral);
+  println!(
+    "Binding PULL socket to ephemeral endpoint: {}",
+    bind_uri_ephemeral
+  );
 
   // 1. Bind to ephemeral port
   pull_socket.bind(bind_uri_ephemeral).await?;
@@ -23,7 +26,8 @@ async fn test_option_last_endpoint_tcp_ephemeral_port() -> Result<(), ZmqError> 
   // 2. Get ZMQ_LAST_ENDPOINT
   println!("Getting ZMQ_LAST_ENDPOINT option...");
   let last_endpoint_bytes = pull_socket.get_option(LAST_ENDPOINT).await?;
-  let last_endpoint_str = String::from_utf8(last_endpoint_bytes).expect("LAST_ENDPOINT should be valid UTF-8");
+  let last_endpoint_str =
+    String::from_utf8(last_endpoint_bytes).expect("LAST_ENDPOINT should be valid UTF-8");
   println!("Received ZMQ_LAST_ENDPOINT: {}", last_endpoint_str);
 
   // 3. Verify the retrieved endpoint
@@ -37,7 +41,11 @@ async fn test_option_last_endpoint_tcp_ephemeral_port() -> Result<(), ZmqError> 
   );
 
   let parts: Vec<&str> = last_endpoint_str.split(':').collect();
-  assert_eq!(parts.len(), 3, "LAST_ENDPOINT should have 3 parts (tcp:ip:port)");
+  assert_eq!(
+    parts.len(),
+    3,
+    "LAST_ENDPOINT should have 3 parts (tcp:ip:port)"
+  );
   let port_str = parts[2];
   let port_num: u16 = port_str.parse().expect("Port should be a number");
   assert_ne!(
@@ -48,7 +56,10 @@ async fn test_option_last_endpoint_tcp_ephemeral_port() -> Result<(), ZmqError> 
 
   // 4. Optional: Test connectivity to the resolved endpoint
   let push_socket = ctx.socket(SocketType::Push)?;
-  println!("Connecting PUSH socket to resolved endpoint: {}", last_endpoint_str);
+  println!(
+    "Connecting PUSH socket to resolved endpoint: {}",
+    last_endpoint_str
+  );
   push_socket.connect(&last_endpoint_str).await?;
   // Allow some time for the connection to establish
   tokio::time::sleep(Duration::from_millis(100)).await;
@@ -67,8 +78,8 @@ async fn test_option_last_endpoint_tcp_ephemeral_port() -> Result<(), ZmqError> 
   // Test getting LAST_ENDPOINT before any bind
   let new_socket = ctx.socket(SocketType::Pull)?;
   let last_endpoint_before_bind_bytes = new_socket.get_option(LAST_ENDPOINT).await?;
-  let last_endpoint_before_bind_str =
-    String::from_utf8(last_endpoint_before_bind_bytes).expect("LAST_ENDPOINT should be valid UTF-8");
+  let last_endpoint_before_bind_str = String::from_utf8(last_endpoint_before_bind_bytes)
+    .expect("LAST_ENDPOINT should be valid UTF-8");
   assert_eq!(
     last_endpoint_before_bind_str, "",
     "LAST_ENDPOINT should be an empty string before any bind"
@@ -105,7 +116,8 @@ async fn test_option_last_endpoint_ipc() -> Result<(), ZmqError> {
   // 2. Get ZMQ_LAST_ENDPOINT
   println!("Getting ZMQ_LAST_ENDPOINT option for IPC...");
   let last_endpoint_bytes = pull_socket.get_option(LAST_ENDPOINT).await?;
-  let last_endpoint_str = String::from_utf8(last_endpoint_bytes).expect("LAST_ENDPOINT should be valid UTF-8");
+  let last_endpoint_str =
+    String::from_utf8(last_endpoint_bytes).expect("LAST_ENDPOINT should be valid UTF-8");
   println!("Received ZMQ_LAST_ENDPOINT (IPC): {}", last_endpoint_str);
 
   // 3. Verify the retrieved endpoint
@@ -116,7 +128,10 @@ async fn test_option_last_endpoint_ipc() -> Result<(), ZmqError> {
 
   // 4. Optional: Test connectivity
   let push_socket = ctx.socket(SocketType::Push)?;
-  println!("Connecting PUSH socket to IPC endpoint: {}", last_endpoint_str);
+  println!(
+    "Connecting PUSH socket to IPC endpoint: {}",
+    last_endpoint_str
+  );
   push_socket.connect(&last_endpoint_str).await?;
   tokio::time::sleep(Duration::from_millis(100)).await;
   println!("PUSH socket connected to IPC.");
@@ -161,7 +176,8 @@ async fn test_option_last_endpoint_inproc() -> Result<(), ZmqError> {
   // 2. Get ZMQ_LAST_ENDPOINT
   println!("Getting ZMQ_LAST_ENDPOINT option for inproc...");
   let last_endpoint_bytes = pull_socket.get_option(LAST_ENDPOINT).await?;
-  let last_endpoint_str = String::from_utf8(last_endpoint_bytes).expect("LAST_ENDPOINT should be valid UTF-8");
+  let last_endpoint_str =
+    String::from_utf8(last_endpoint_bytes).expect("LAST_ENDPOINT should be valid UTF-8");
   println!("Received ZMQ_LAST_ENDPOINT (inproc): {}", last_endpoint_str);
 
   // 3. Verify the retrieved endpoint
@@ -172,7 +188,10 @@ async fn test_option_last_endpoint_inproc() -> Result<(), ZmqError> {
 
   // 4. Optional: Test connectivity
   let push_socket = ctx.socket(SocketType::Push)?;
-  println!("Connecting PUSH socket to inproc endpoint: {}", last_endpoint_str);
+  println!(
+    "Connecting PUSH socket to inproc endpoint: {}",
+    last_endpoint_str
+  );
   push_socket.connect(&last_endpoint_str).await?;
   tokio::time::sleep(Duration::from_millis(20)).await; // inproc connect is also quick
   println!("PUSH socket connected to inproc.");

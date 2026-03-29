@@ -1,12 +1,23 @@
 #![allow(dead_code, unused_variables)]
 
 use super::ZmtpProtocolHandlerX;
-use crate::transport::ZmtpStdStream;
 use crate::error::ZmqError;
 use crate::message::Msg;
 use crate::protocol::zmtp::command::ZmtpCommand;
+use crate::transport::ZmtpStdStream;
 
 use std::time::{Duration, Instant};
+
+/// Result of processing an incoming ZMTP command frame during the data phase.
+pub(crate) enum DataCommandResult {
+  /// A reply frame should be sent back to the peer (e.g. PONG in response to PING).
+  SendReply(Msg),
+  /// The command was fully handled internally; no further action needed.
+  Handled,
+  /// The command was not recognised by the session layer and should be
+  /// forwarded to the socket pattern logic via ISocket::handle_pipe_event.
+  ForwardToSocket(Msg),
+}
 
 /// State specific to the ZMTP handshake process.
 #[derive(Debug)]
@@ -84,7 +95,9 @@ impl ZmtpHeartbeatStateX {
   /// Returns the Instant when a PONG is expected by, if a PING has been sent.
   pub(crate) fn get_pong_deadline(&self) -> Option<Instant> {
     if self.waiting_for_pong {
-      self.last_ping_sent_time.map(|sent_at| sent_at + self.timeout)
+      self
+        .last_ping_sent_time
+        .map(|sent_at| sent_at + self.timeout)
     } else {
       None
     }
@@ -94,36 +107,31 @@ impl ZmtpHeartbeatStateX {
 pub(crate) fn process_heartbeat_command_impl<S: ZmtpStdStream>(
   handler: &mut ZmtpProtocolHandlerX<S>,
   cmd_msg: &Msg,
-) -> Result<Option<Msg>, ZmqError> {
+) -> Result<DataCommandResult, ZmqError> {
   tracing::trace!(
     sca_handle = handler.actor_handle,
     "Processing incoming command frame in data phase for heartbeat."
   );
   match ZmtpCommand::parse(cmd_msg) {
     Some(ZmtpCommand::Ping(ping_context_payload)) => {
-      // This payload is just the context part
       tracing::debug!(
         sca_handle = handler.actor_handle,
         ping_payload_len = ping_context_payload.len(),
         "Received PING, preparing PONG."
       );
-      // The ping_context_payload from ZmtpCommand::Ping is already just the <Context> part
-      // because ZmtpCommand::parse extracts it as &body[5+2..]
       let pong_reply_msg = ZmtpCommand::create_pong(&ping_context_payload);
-      Ok(Some(pong_reply_msg))
+      Ok(DataCommandResult::SendReply(pong_reply_msg))
     }
     Some(ZmtpCommand::Pong(_pong_context_payload)) => {
       tracing::debug!(sca_handle = handler.actor_handle, "Received PONG.");
       handler.heartbeat_state.pong_received();
-      Ok(None)
+      Ok(DataCommandResult::Handled)
     }
-    Some(ZmtpCommand::Error) => Err(ZmqError::ProtocolViolation("Received ZMTP ERROR from peer".into())),
-    Some(other) => {
-      Ok(None) // Ignore other commands
-    }
-    None => Err(ZmqError::ProtocolViolation(
-      "Unparseable command received in data phase".into(),
+    Some(ZmtpCommand::Error) => Err(ZmqError::ProtocolViolation(
+      "Received ZMTP ERROR from peer".into(),
     )),
+    // JOIN, LEAVE, Ready, Unknown — forward to the socket pattern logic
+    Some(_) | None => Ok(DataCommandResult::ForwardToSocket(cmd_msg.clone())),
   }
 }
 

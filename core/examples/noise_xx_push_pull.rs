@@ -1,4 +1,5 @@
 use rzmq::{
+  Context, Msg, SocketType, ZmqError,
   socket::options::{
     NOISE_XX_ENABLED,
     NOISE_XX_REMOTE_STATIC_PUBLIC_KEY,
@@ -6,13 +7,12 @@ use rzmq::{
     RCVHWM,
     SNDHWM, // Good to set for examples
   },
-  Context, Msg, SocketType, ZmqError,
 };
 use std::time::Duration;
 use tracing_subscriber::{EnvFilter, FmtSubscriber}; // For example logging
 
 // For key generation
-use rand::{rng, rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rng, rngs::StdRng};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 // You can also generate keys with our cli tool `rzmq keygen noise-xx ...`
@@ -45,10 +45,11 @@ impl Keypair {
 fn setup_tracing_for_example() {
   // Allow RUST_LOG to override, otherwise default to info for rzmq and general info.
   let default_filter = "info,rzmq=info"; // Start with info
-                                         // For deeper debugging of Noise, change rzmq=info to rzmq=debug or rzmq=trace
-                                         // Example: RUST_LOG="rzmq=trace" cargo run --example noise_xx_push_pull --features noise_xx
+  // For deeper debugging of Noise, change rzmq=info to rzmq=debug or rzmq=trace
+  // Example: RUST_LOG="rzmq=trace" cargo run --example noise_xx_push_pull --features noise_xx
 
-  let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
+  let env_filter =
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
   let subscriber = FmtSubscriber::builder()
     .with_max_level(tracing::Level::TRACE) // Allow all levels down to TRACE based on filter
@@ -57,8 +58,11 @@ fn setup_tracing_for_example() {
     .with_line_number(true)
     .with_ansi(true) // Enable ANSI colors for better readability if terminal supports
     .finish();
-  tracing::subscriber::set_global_default(subscriber).expect("Failed to set global tracing subscriber");
-  println!("Tracing initialized for example. Use RUST_LOG environment variable to adjust verbosity (e.g., RUST_LOG=rzmq=trace).");
+  tracing::subscriber::set_global_default(subscriber)
+    .expect("Failed to set global tracing subscriber");
+  println!(
+    "Tracing initialized for example. Use RUST_LOG environment variable to adjust verbosity (e.g., RUST_LOG=rzmq=trace)."
+  );
 }
 
 #[tokio::main]
@@ -85,7 +89,9 @@ async fn main() -> Result<(), ZmqError> {
     .await?;
   // Server in XX pattern learns client's public key during handshake.
 
-  pull_server.set_option_raw(RCVHWM, &(10i32).to_ne_bytes()).await?;
+  pull_server
+    .set_option_raw(RCVHWM, &(10i32).to_ne_bytes())
+    .await?;
   println!("[{}] Binding to {}...", server_keys.name, endpoint);
   pull_server.bind(endpoint).await?;
   println!("[{}] Bound and listening with Noise_XX.", server_keys.name);
@@ -104,8 +110,13 @@ async fn main() -> Result<(), ZmqError> {
     .set_option_raw(NOISE_XX_REMOTE_STATIC_PUBLIC_KEY, &server_keys.pk_bytes)
     .await?;
 
-  push_client.set_option_raw(SNDHWM, &(10i32).to_ne_bytes()).await?;
-  println!("[{}] Connecting to {} with Noise_XX...", client_keys.name, endpoint);
+  push_client
+    .set_option_raw(SNDHWM, &(10i32).to_ne_bytes())
+    .await?;
+  println!(
+    "[{}] Connecting to {} with Noise_XX...",
+    client_keys.name, endpoint
+  );
   push_client.connect(endpoint).await?;
   println!(
     "[{}] Connect call returned. Waiting for secure connection...",

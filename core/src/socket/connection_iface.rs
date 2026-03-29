@@ -7,10 +7,8 @@ use crate::message::Msg;
 use crate::runtime::SystemEvent;
 use crate::socket::events::MonitorSender;
 use crate::socket::options::SocketOptions;
-use crate::socket::SocketEvent;
 #[cfg(feature = "io-uring")]
 use crate::uring;
-use crate::Context;
 
 use std::any::Any;
 use std::fmt;
@@ -129,7 +127,6 @@ impl UringFdConnection {
 #[cfg(feature = "io-uring")]
 #[async_trait]
 impl ISocketConnection for UringFdConnection {
-  
   /// This method is now effectively synchronous, wrapping the non-blocking `try_send`.
   /// The `async` keyword is only here to satisfy the trait definition.
   async fn send_multipart(&self, msgs: Vec<Msg>) -> Result<(), ZmqError> {
@@ -145,16 +142,19 @@ impl ISocketConnection for UringFdConnection {
       fd: self.fd,
       reply_tx,
     };
-    
+
     let worker_op_tx = uring::global_state::get_global_uring_worker_op_tx()?;
-    worker_op_tx.send(req).await.map_err(|e| {
-      ZmqError::Internal(format!("UringWorker op channel error for close: {}", e))
-    })?;
+    worker_op_tx
+      .send(req)
+      .await
+      .map_err(|e| ZmqError::Internal(format!("UringWorker op channel error for close: {}", e)))?;
 
     match tokio::time::timeout(Duration::from_secs(5), reply_rx.recv()).await {
       Ok(Ok(Ok(_))) => Ok(()),
       Ok(Ok(Err(e))) => Err(e),
-      Ok(Err(_)) => Err(ZmqError::Internal("UringWorker reply channel error for close".into())),
+      Ok(Err(_)) => Err(ZmqError::Internal(
+        "UringWorker reply channel error for close".into(),
+      )),
       Err(_) => Err(ZmqError::Timeout),
     }
   }

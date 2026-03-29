@@ -1,13 +1,13 @@
 #![cfg(feature = "io-uring")]
 
 use crate::io_uring_backend::{
+  UserData,
   buffer_manager::BufferRingManager,
   connection_handler::{
     HandlerIoOps, ProtocolHandlerFactory, UringConnectionHandler, UringWorkerInterface,
     WorkerIoConfig,
   },
   ops::ProtocolConfig,
-  UserData,
 };
 
 use std::collections::HashMap;

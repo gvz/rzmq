@@ -170,7 +170,7 @@ async fn test_pyzmq_req_to_rzmq_router() -> Result<()> {
 
   // The application must now provide the full envelope for the ROUTER to send.
   let reply_frames = vec![
-    identity.clone(),         // The routing frame (identity)
+    identity.clone(),                // The routing frame (identity)
     Msg::from_static(reply_payload), // The payload
   ];
   router_socket.send_multipart(reply_frames).await?;
@@ -216,7 +216,10 @@ async fn test_pyzmq_req_to_rzmq_router() -> Result<()> {
     }
     Err(join_error) => {
       // The blocking task panicked.
-      panic!("Blocking task for reading client stdout panicked: {}", join_error);
+      panic!(
+        "Blocking task for reading client stdout panicked: {}",
+        join_error
+      );
     }
   }
 

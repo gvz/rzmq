@@ -1,31 +1,31 @@
 use bench_matrix::{
-  criterion_runner::{
-    async_suite::{AsyncBenchmarkSuite, AsyncSetupFn},
-    ExtractorFn,
-  },
   AbstractCombination, MatrixCellValue,
-};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use rzmq::{
-  socket::{
-    options::{RCVHWM, SNDHWM},
-    MonitorReceiver, SocketEvent,
+  criterion_runner::{
+    ExtractorFn,
+    async_suite::{AsyncBenchmarkSuite, AsyncSetupFn},
   },
-  Context, Msg, SocketType, ZmqError,
 };
-use tracing::level_filters::LevelFilter;
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use rzmq::{
+  Context, Msg, SocketType, ZmqError,
+  socket::{
+    MonitorReceiver, SocketEvent,
+    options::{RCVHWM, SNDHWM},
+  },
+};
 use std::{
   future::Future,
   pin::Pin,
   sync::{
-    atomic::{AtomicU16, Ordering as AtomicOrdering},
     Arc,
+    atomic::{AtomicU16, Ordering as AtomicOrdering},
   },
   time::{Duration, Instant},
 };
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
+use tracing::level_filters::LevelFilter;
 
 // --- Benchmarking Constants ---
 const BIND_ADDR_BASE: &str = "tcp://127.0.0.1";

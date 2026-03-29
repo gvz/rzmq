@@ -139,28 +139,39 @@ async fn test_plain_client_no_credentials() {
   let addr = "tcp://127.0.0.1:15504";
 
   // Server expects specific credentials (admin/secret) to verify rejection
-  let server_socket = setup_server(&ctx, addr, true, Some("admin"), Some("secret")).await.expect("Server setup failed");
+  let server_socket = setup_server(&ctx, addr, true, Some("admin"), Some("secret"))
+    .await
+    .expect("Server setup failed");
   // Ensure server processes events
   tokio::spawn(async move {
-      let _ = server_socket.recv().await;
+    let _ = server_socket.recv().await;
   });
 
   // Client configured with None (defaults to empty strings)
-  let (client_socket, client_monitor) = setup_client(&ctx, addr, true, None, None).await.expect("Client setup failed");
+  let (client_socket, client_monitor) = setup_client(&ctx, addr, true, None, None)
+    .await
+    .expect("Client setup failed");
 
   // Attempt to send (should trigger handshake)
-  let _ = client_socket.send(rzmq::Msg::from_static(b"empty_req")).await;
-  
+  let _ = client_socket
+    .send(rzmq::Msg::from_static(b"empty_req"))
+    .await;
+
   // We expect the handshake to FAIL because empty != admin/secret
   let mut failure_observed = false;
   let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
   loop {
-    if tokio::time::Instant::now() > deadline { break; }
+    if tokio::time::Instant::now() > deadline {
+      break;
+    }
     match timeout(Duration::from_millis(200), client_monitor.recv()).await {
       Ok(Ok(event)) => {
-        if matches!(event, SocketEvent::HandshakeFailed { .. } | SocketEvent::Disconnected { .. }) {
-            failure_observed = true;
-            break;
+        if matches!(
+          event,
+          SocketEvent::HandshakeFailed { .. } | SocketEvent::Disconnected { .. }
+        ) {
+          failure_observed = true;
+          break;
         }
       }
       _ => {}
@@ -171,7 +182,7 @@ async fn test_plain_client_no_credentials() {
     failure_observed,
     "Client with no credentials should have been rejected by server expecting 'admin'."
   );
-  
+
   client_socket.close().await.unwrap();
   ctx.term().await.unwrap();
 }

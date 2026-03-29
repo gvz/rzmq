@@ -1,5 +1,6 @@
 #![cfg(feature = "io-uring")]
 
+use crate::ZmqError;
 use crate::io_uring_backend::buffer_manager::BufferRingManager;
 use crate::io_uring_backend::connection_handler::{
   HandlerIoOps, HandlerSqeBlueprint, UringConnectionHandler, UringWorkerInterface,
@@ -106,7 +107,11 @@ impl MultishotReader {
       // This CQE is for our active multishot read operation.
       // is_active should be true here if logic is correct.
       if !self.is_active {
-        tracing::warn!("[MultishotReader FD={}] CQE (ud {}) for active_op_user_data, but reader not marked active_in_kernel. State inconsistency?", self.fd, cqe_ud);
+        tracing::warn!(
+          "[MultishotReader FD={}] CQE (ud {}) for active_op_user_data, but reader not marked active_in_kernel. State inconsistency?",
+          self.fd,
+          cqe_ud
+        );
         self.is_active = true;
       }
 
@@ -236,7 +241,11 @@ impl MultishotReader {
     } else {
       // This CQE was not for this MultishotReader. This should ideally not be reached
       // if cqe_processor calls delegate_cqe_to_multishot_reader only after handler.matches_cqe_user_data().
-      tracing::error!("[MultishotReader FD={}] process_cqe called with non-matching UserData (ud {}). This indicates a logic error in cqe_processor's delegation.", self.fd, cqe_ud);
+      tracing::error!(
+        "[MultishotReader FD={}] process_cqe called with non-matching UserData (ud {}). This indicates a logic error in cqe_processor's delegation.",
+        self.fd,
+        cqe_ud
+      );
       return Err(ZmqError::Internal(
         "MultishotReader::process_cqe called with non-matching UserData".into(),
       ));
@@ -259,7 +268,12 @@ impl MultishotReader {
       // This can happen if a new multishot op is prepared (generating new active_op_user_data)
       // but the worker calls set_active for the *old* UserData if a submit attempt failed and retried.
       // Or if an old blueprint was processed.
-      tracing::warn!("[MultishotReader FD={}] set_active called with UserData {}, but current expected is {:?}. State unchanged unless matching.", self.fd, user_data, self.active_op_user_data);
+      tracing::warn!(
+        "[MultishotReader FD={}] set_active called with UserData {}, but current expected is {:?}. State unchanged unless matching.",
+        self.fd,
+        user_data,
+        self.active_op_user_data
+      );
       // Only set active if the UserData matches the one we are currently tracking for submission.
     }
   }

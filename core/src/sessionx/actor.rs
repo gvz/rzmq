@@ -300,7 +300,7 @@ where
     }
 
     let had_error = self.error_for_drop_guard.is_some();
-    
+
     if let Some(err) = self.error_for_drop_guard.take() {
       actor_drop_guard.set_error(err);
     } else {
@@ -539,13 +539,33 @@ where
 
     if msg.is_command() {
       // Process PING/PONG
+      use crate::sessionx::protocol_handler::DataCommandResult;
       match self.zmtp_handler.process_incoming_data_command_frame(&msg) {
-        Ok(Some(pong_reply)) => {
+        Ok(DataCommandResult::SendReply(pong_reply)) => {
           if let Err(e) = self.zmtp_handler.write_data_msg(pong_reply, true).await {
             self.set_fatal_error(e).await;
           }
         }
-        Ok(None) => { /* PONG received and handled */ }
+        Ok(DataCommandResult::Handled) => {}
+        Ok(DataCommandResult::ForwardToSocket(cmd_msg)) => {
+          // Forward JOIN/LEAVE (and any other unrecognised commands) to
+          // the socket pattern logic.
+          let command_for_isocket = Command::PipeMessageReceived {
+            pipe_id: pipe_read_id,
+            msg: cmd_msg,
+          };
+          if let Err(e) = self
+            .socket_logic
+            .handle_pipe_event(pipe_read_id, command_for_isocket)
+            .await
+          {
+            tracing::warn!(
+              sca_handle = self.handle,
+              error = %e,
+              "Error forwarding unknown ZMTP command to ISocket. Ignoring."
+            );
+          }
+        }
         Err(e) => self.set_fatal_error(e).await,
       }
     } else {

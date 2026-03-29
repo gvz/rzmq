@@ -165,7 +165,10 @@ impl ISocket for PullSocket {
       pipe_read_id = pipe_read_id,
       "PULL detaching pipe"
     );
-    self.incoming_orchestrator.clear_pipe_state(pipe_read_id).await;
+    self
+      .incoming_orchestrator
+      .clear_pipe_state(pipe_read_id)
+      .await;
   }
 
   async fn update_peer_identity(&self, pipe_read_id: usize, identity: Option<Blob>) {

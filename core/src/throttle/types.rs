@@ -1,4 +1,4 @@
-use crate::throttle::strategies::{power_curve_strategy, ThrottlingStrategy};
+use crate::throttle::strategies::{ThrottlingStrategy, power_curve_strategy};
 
 /// Defines which direction of I/O should be prioritized by the throttle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

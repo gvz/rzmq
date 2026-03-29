@@ -693,7 +693,7 @@ async fn test_dealer_routing_after_peer_disconnect() -> Result<(), ZmqError> {
   // 2. Disconnect Router 1
   println!("Closing Router 1...");
   router1.close().await?; // Explicitly close to stop the actor and release the port
-  
+
   // Allow time for Dealer to detect disconnection
   tokio::time::sleep(Duration::from_millis(200)).await;
 

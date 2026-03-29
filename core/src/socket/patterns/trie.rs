@@ -1,7 +1,7 @@
 use async_recursion::async_recursion;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 
 /// A node in the subscription trie.
@@ -117,7 +117,7 @@ impl SubscriptionTrie {
       let (matched_prefix, next_node_option) = {
         // Start new scope
         let current_node_r = current_node_arc.read().await; // Lock inside scope
-                                                            // Check if current node itself matches a prefix
+        // Check if current node itself matches a prefix
         let prefix_match = current_node_r.count.load(Ordering::Relaxed) > 0;
         // Get the next node Arc if it exists
         let next_node = current_node_r.children.get(&byte).cloned();

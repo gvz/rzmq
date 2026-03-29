@@ -42,7 +42,10 @@ async fn run_pusher_ventilator(ctx: Context) -> Result<(), ZmqError> {
 
 async fn run_pull_worker(ctx: Context, worker_id: usize) -> Result<(), ZmqError> {
   let pull_socket = ctx.socket(SocketType::Pull)?;
-  println!("[PULL Worker {}] Connecting to {}...", worker_id, PUSH_PULL_ADDR);
+  println!(
+    "[PULL Worker {}] Connecting to {}...",
+    worker_id, PUSH_PULL_ADDR
+  );
   pull_socket.connect(PUSH_PULL_ADDR).await?;
   println!("[PULL Worker {}] Connected.", worker_id);
 
@@ -62,7 +65,10 @@ async fn run_pull_worker(ctx: Context, worker_id: usize) -> Result<(), ZmqError>
         sleep(Duration::from_millis(load_val * 5)).await; // Work
       }
     }
-    println!("[PULL Worker {}] Finished processing: '{}'", worker_id, message_str);
+    println!(
+      "[PULL Worker {}] Finished processing: '{}'",
+      worker_id, message_str
+    );
   }
 
   println!("[PULL Worker {}] Closing socket.", worker_id);
@@ -72,7 +78,9 @@ async fn run_pull_worker(ctx: Context, worker_id: usize) -> Result<(), ZmqError>
 
 #[tokio::main]
 async fn main() -> Result<(), ZmqError> {
-  tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+  tracing_subscriber::fmt()
+    .with_max_level(tracing::Level::INFO)
+    .init();
 
   println!("--- Push-Pull Example ---");
   let ctx = Context::new()?;

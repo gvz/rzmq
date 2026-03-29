@@ -11,6 +11,7 @@ mod main_loop;
 mod multishot_reader;
 mod sqe_builder;
 
+use crate::io_uring_backend::UserData;
 use crate::io_uring_backend::buffer_manager::BufferRingManager;
 use crate::io_uring_backend::connection_handler::{
   HandlerSqeBlueprint, HandlerUpstreamEvent, ProtocolHandlerFactory, WorkerIoConfig,
@@ -18,8 +19,7 @@ use crate::io_uring_backend::connection_handler::{
 use crate::io_uring_backend::ops::UringOpRequest;
 use crate::io_uring_backend::send_buffer_pool::SendBufferPool;
 use crate::io_uring_backend::signaling_op_sender::SignalingOpSender;
-use crate::io_uring_backend::UserData;
-use crate::uring::{global_state, UringConfig};
+use crate::uring::{UringConfig, global_state};
 use crate::{Msg, ZmqError};
 
 use std::collections::{HashMap, VecDeque};
@@ -31,8 +31,8 @@ use std::sync::Arc;
 
 use fibre::mpmc::{unbounded, AsyncSender, Receiver as SyncReceiver, Sender as SyncSender};
 use fibre::mpsc;
-use io_uring::opcode;
 use io_uring::IoUring;
+use io_uring::opcode;
 use tracing::{debug, error, info, trace, warn};
 
 // Publicly re-export for use within io_uring_backend module
@@ -270,7 +270,9 @@ impl UringWorker {
 
     for op_ud in internal_ops_to_cancel {
       if sq_for_shutdown.is_full() {
-        warn!("UringWorker draining transition: SQ full, cannot submit all cancel ops. CQE processing will need to handle the rest.");
+        warn!(
+          "UringWorker draining transition: SQ full, cannot submit all cancel ops. CQE processing will need to handle the rest."
+        );
         break;
       }
       trace!(

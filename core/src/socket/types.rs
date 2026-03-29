@@ -38,6 +38,29 @@ pub enum SocketType {
   /// **PULL:** Collects messages from a pool of connected PUSH distributors in a fair-queued manner.
   /// PULL sockets do not send messages.
   Pull,
+
+  /// **RADIO:** Broadcasts messages to all connected DISH sockets.
+  ///
+  /// The thread-safe alternative to PUB. Every message sent by a RADIO socket
+  /// must have a group attached (via `Msg::set_group`). The group is used by
+  /// DISH sockets to filter messages they receive.
+  ///
+  /// - RADIO sockets can only **send** messages; `recv()` returns an error.
+  /// - Multipart messages are **not** supported (thread-safety requirement).
+  /// - Messages are broadcast to all connected DISH peers; DISH-side filtering
+  ///   determines which messages are delivered to the application.
+  Radio,
+
+  /// **DISH:** Receives messages from RADIO sockets for joined groups.
+  ///
+  /// The thread-safe alternative to SUB. A DISH socket must join one or more
+  /// groups using `set_option(JOIN, group_name)` to receive messages.
+  ///
+  /// - DISH sockets can only **receive** messages; `send()` returns an error.
+  /// - Multipart messages are **not** supported (thread-safety requirement).
+  /// - Each received message has its group accessible via `Msg::group()`.
+  /// - Messages for groups that have not been joined are silently discarded.
+  Dish,
 }
 
 /// The public handle for interacting with an rzmq socket.

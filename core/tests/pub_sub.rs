@@ -1,6 +1,5 @@
 // tests/pub_sub.rs
 
-use rzmq::socket::options::{SUBSCRIBE, UNSUBSCRIBE};
 use rzmq::socket::SocketEvent;
 use rzmq::{Msg, SocketType, ZmqError};
 use serial_test::serial;
@@ -62,8 +61,12 @@ async fn test_pub_sub_tcp_topic_filter() -> Result<(), ZmqError> {
     tokio::time::sleep(Duration::from_millis(150)).await;
 
     // Send messages on different topics
-    pub_socket.send(Msg::from_static(b"TopicB: Data for B")).await?;
-    pub_socket.send(Msg::from_static(b"TopicA: Data for A")).await?;
+    pub_socket
+      .send(Msg::from_static(b"TopicB: Data for B"))
+      .await?;
+    pub_socket
+      .send(Msg::from_static(b"TopicA: Data for A"))
+      .await?;
     println!("PUB sent messages");
 
     // Receive message - should only get TopicA
@@ -227,7 +230,9 @@ async fn test_pub_sub_unsubscribe() -> Result<(), ZmqError> {
 
   // Send and receive first message
   println!("PUB sending message 1...");
-  pub_socket.send(Msg::from_static(b"TopicToUnsub:Data1")).await?;
+  pub_socket
+    .send(Msg::from_static(b"TopicToUnsub:Data1"))
+    .await?;
   println!("SUB receiving message 1...");
   let rec1 = common::recv_timeout(&sub_socket, LONG_TIMEOUT).await?;
   assert_eq!(rec1.data().unwrap(), b"TopicToUnsub:Data1");
@@ -240,7 +245,9 @@ async fn test_pub_sub_unsubscribe() -> Result<(), ZmqError> {
 
   // Send second message
   println!("PUB sending message 2...");
-  pub_socket.send(Msg::from_static(b"TopicToUnsub:Data2")).await?;
+  pub_socket
+    .send(Msg::from_static(b"TopicToUnsub:Data2"))
+    .await?;
 
   // Attempt receive - should timeout
   println!("SUB attempting recv (should timeout)...");

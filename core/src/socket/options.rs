@@ -10,6 +10,19 @@ pub const RCVHWM: i32 = 24;
 pub const LINGER: i32 = 17;
 pub const SUBSCRIBE: i32 = 6;
 pub const UNSUBSCRIBE: i32 = 7;
+/// DISH socket option: join a group.
+/// Value is the group name as raw bytes (1–255 bytes; bytes must be 1–255).
+/// Joining a group causes the DISH socket to receive messages tagged with
+/// that group by a connected RADIO socket.
+/// Matches libzmq's ZMQ_JOIN = 74.
+pub const JOIN: i32 = 74;
+
+/// DISH socket option: leave a group.
+/// Value is the group name as raw bytes.
+/// Leaving a group stops delivery of messages tagged with that group.
+/// Matches libzmq's ZMQ_LEAVE = 75.
+pub const LEAVE: i32 = 75;
+
 pub const ROUTING_ID: i32 = 5; // Often called ZMQ_IDENTITY
 pub const RECONNECT_IVL: i32 = 18; // ZMQ_RECONNECT_IVL
 pub const RECONNECT_IVL_MAX: i32 = 21; // ZMQ_RECONNECT_IVL_MAX

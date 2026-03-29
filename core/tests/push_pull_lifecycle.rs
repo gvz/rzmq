@@ -37,14 +37,20 @@ async fn test_push_pull_explicit_close_then_term() -> Result<(), ZmqError> {
     Ok(Ok(msg)) if msg.data().unwrap_or_default() == b"READY" => {
       println!("Readiness recv OK.")
     }
-    Ok(Ok(msg)) => panic!("Readiness recv wrong message: {:?}", msg.data().unwrap_or_default()),
+    Ok(Ok(msg)) => panic!(
+      "Readiness recv wrong message: {:?}",
+      msg.data().unwrap_or_default()
+    ),
     Ok(Err(e)) => panic!("Readiness recv failed: {}", e),
     Err(_) => panic!("Readiness recv timed out"),
   }
   println!("Readiness handshake complete.");
 
   // --- Send/Receive Loop ---
-  println!("Starting main send/receive loop ({} messages)...", NUM_MESSAGES);
+  println!(
+    "Starting main send/receive loop ({} messages)...",
+    NUM_MESSAGES
+  );
   let sender_task = {
     let push = push.clone();
     tokio::spawn(async move {
@@ -69,13 +75,20 @@ async fn test_push_pull_explicit_close_then_term() -> Result<(), ZmqError> {
         match timeout(LONG_TIMEOUT, pull.recv()).await {
           Ok(Ok(msg)) => {
             let expected = format!("Msg {}", i).into_bytes();
-            assert_eq!(msg.data().unwrap(), expected.as_slice(), "Mismatch on msg {}", i);
+            assert_eq!(
+              msg.data().unwrap(),
+              expected.as_slice(),
+              "Mismatch on msg {}",
+              i
+            );
             println!("Receiver task received Msg {}", i);
           }
           Ok(Err(e)) => {
             println!("Receiver task error on msg {}: {}", i, e);
             // Allow the specific "Socket terminated" error if it happens *exactly* at the end
-            if i == NUM_MESSAGES - 1 && matches!(&e, ZmqError::InvalidState(s) if s == &"Socket terminated") {
+            if i == NUM_MESSAGES - 1
+              && matches!(&e, ZmqError::InvalidState(s) if s == &"Socket terminated")
+            {
               println!("Receiver task tolerated expected termination error at the end.");
               // Break gracefully instead of returning error
               return Ok(i); // Return count received before termination error
