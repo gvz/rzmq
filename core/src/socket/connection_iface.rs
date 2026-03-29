@@ -78,16 +78,10 @@ impl ISocketConnection for DummyConnection {
 #[cfg(feature = "udp")]
 #[derive(Debug)]
 pub(crate) struct UdpSendConnection {
-  /// The underlying (Tokio) UDP socket.
-  /// Arc so it can be shared if the same local socket sends to multiple targets
-  /// (future: multiple Radio connect endpoints sharing one bound socket).
   pub(crate) socket: Arc<tokio::net::UdpSocket>,
-
-  /// Destination address: peer (unicast/bcast) or multicast group.
   pub(crate) send_addr: std::net::SocketAddr,
-
-  /// Stable ID for this connection entry. Derived from context handle counter.
   pub(crate) connection_id: usize,
+  pub(crate) send_timeout: Option<Duration>,
 }
 
 #[cfg(feature = "udp")]
@@ -96,11 +90,13 @@ impl UdpSendConnection {
     socket: Arc<tokio::net::UdpSocket>,
     send_addr: std::net::SocketAddr,
     connection_id: usize,
+    send_timeout: Option<Duration>,
   ) -> Self {
     Self {
       socket,
       send_addr,
       connection_id,
+      send_timeout,
     }
   }
 }
@@ -108,13 +104,6 @@ impl UdpSendConnection {
 #[cfg(feature = "udp")]
 #[async_trait]
 impl ISocketConnection for UdpSendConnection {
-  /// Sends a single pre-encoded RADIO-DISH datagram.
-  ///
-  /// `msgs` must contain exactly one element — the already-encoded frame
-  /// produced by `RadioSocket::encode_radio_frame`:
-  ///   `[ group_len: u8 | group: bytes | payload: bytes ]`
-  ///
-  /// Enforces the 65507-byte datagram limit before sending.
   async fn send_multipart(&self, msgs: Vec<Msg>) -> Result<(), ZmqError> {
     if msgs.len() != 1 {
       return Err(ZmqError::InvalidState(
@@ -126,12 +115,23 @@ impl ISocketConnection for UdpSendConnection {
     if data.len() > UDP_MAX {
       return Err(ZmqError::MessageTooLarge(data.len(), UDP_MAX));
     }
-    self
-      .socket
-      .send_to(data, self.send_addr)
-      .await
-      .map(|_| ())
-      .map_err(ZmqError::from)
+
+    match self.send_timeout {
+      Some(timeout) => {
+        let send_fut = self.socket.send_to(data, self.send_addr);
+        match tokio::time::timeout(timeout, send_fut).await {
+          Ok(Ok(_)) => Ok(()),
+          Ok(Err(e)) => Err(ZmqError::from(e)),
+          Err(_) => Err(ZmqError::Timeout),
+        }
+      }
+      None => self
+        .socket
+        .send_to(data, self.send_addr)
+        .await
+        .map(|_| ())
+        .map_err(ZmqError::from),
+    }
   }
 
   async fn close_connection(&self) -> Result<(), ZmqError> {
