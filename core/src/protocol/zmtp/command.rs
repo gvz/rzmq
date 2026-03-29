@@ -24,7 +24,7 @@ pub const ZMTP_CMD_LEAVE_NAME: &[u8] = b"LEAVE";
 
 /// Represents known ZMTP commands relevant to basic operation.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum ZmtpCommand {
+pub enum ZmtpCommand {
   Ping(Bytes),      // Contains TTL and Context
   Pong(Bytes),      // Contains Context
   Ready(ZmtpReady), // Store parsed READY info

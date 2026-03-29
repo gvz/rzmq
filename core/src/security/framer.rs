@@ -1,6 +1,6 @@
 use crate::error::ZmqError;
 use crate::message::Msg;
-use crate::protocol::zmtp::{ZmtpCodec, manual_parser::ZmtpManualParser};
+use crate::protocol::zmtp::{manual_parser::ZmtpManualParser, ZmtpCodec};
 use crate::security::IDataCipher;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use tokio_util::codec::Encoder;

@@ -1,0 +1,63 @@
+[package]
+name = "rzmq-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Exclude from the workspace — cargo-fuzz manages this crate independently.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes = "^1.4"
+tokio-util = { version = "^0.7", features = ["codec"] }
+
+[dependencies.rzmq]
+path = ".."
+features = ["fuzzing"]
+
+# Fuzz targets — each is a separate libFuzzer entry point.
+[[bin]]
+name = "zmtp_codec"
+path = "fuzz_targets/zmtp_codec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zmtp_greeting"
+path = "fuzz_targets/zmtp_greeting.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zmtp_command"
+path = "fuzz_targets/zmtp_command.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zmtp_manual_parser"
+path = "fuzz_targets/zmtp_manual_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plain_process_token"
+path = "fuzz_targets/plain_process_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "msg_set_group"
+path = "fuzz_targets/msg_set_group.rs"
+test = false
+doc = false
+bench = false

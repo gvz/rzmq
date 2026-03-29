@@ -7,7 +7,11 @@ pub mod zap;
 
 pub(crate) use cipher::IDataCipher;
 pub(crate) use mechanism::{Mechanism, MechanismStatus};
-pub(crate) use {null::NullMechanism, plain::PlainMechanism};
+pub(crate) use null::NullMechanism;
+#[cfg(not(feature = "fuzzing"))]
+pub(crate) use plain::PlainMechanism;
+#[cfg(feature = "fuzzing")]
+pub use plain::PlainMechanism;
 
 use crate::message::Metadata;
 use crate::{error::ZmqError, protocol::zmtp::ZmtpGreeting, socket::ZmtpEngineConfig};

@@ -28,6 +28,10 @@ udp = []
 
 bench_external_clients = []
 
+# Widens visibility of internal types (parsers, security mechanisms) for fuzz targets.
+# Must NOT be enabled in production builds.
+fuzzing = ["plain"]
+
 [dependencies]
 
 # --- Core Async Runtime & Concurrency ---

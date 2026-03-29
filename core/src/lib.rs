@@ -47,3 +47,11 @@ pub(crate) use socket::core::CoreState;
 
 // Socket and SocketType are fundamental for users.
 pub use socket::types::{Socket, SocketType};
+
+// Re-exports for fuzz targets only. Never enable in production builds.
+#[cfg(feature = "fuzzing")]
+pub use protocol::zmtp::command::{ZmtpCommand, ZmtpReady};
+#[cfg(feature = "fuzzing")]
+pub use security::PlainMechanism;
+#[cfg(feature = "fuzzing")]
+pub use security::mechanism::Mechanism;
