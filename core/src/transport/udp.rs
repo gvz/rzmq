@@ -173,13 +173,21 @@ impl UdpReceiveActor {
                           pipe_id: self.pipe_read_id,
                           msg,
                       };
-                      if let Err(e) = self.socket_logic
+                      match self.socket_logic
                           .handle_pipe_event(self.pipe_read_id, cmd)
                           .await
                       {
-                          error!(handle = self.handle,
-                                 "UDP receive actor: handle_pipe_event error: {}", e);
-                          break;
+                          Ok(()) => {}
+                          Err(ZmqError::Shutdown) => {
+                              error!(handle = self.handle,
+                                     "UDP receive actor: socket shutting down, exiting");
+                              break;
+                          }
+                          Err(e) => {
+                              warn!(handle = self.handle,
+                                    "UDP receive actor: handle_pipe_event error (datagram dropped): {}", e);
+                              // Non-fatal: drop the datagram and keep the loop alive.
+                          }
                       }
                   }
                   Err(e) => {
@@ -360,17 +368,50 @@ pub(crate) fn create_connected_send_socket(
 }
 
 /// Resolve an interface name or IPv4 address string to Ipv4Addr.
-/// Tries to parse as Ipv4Addr first; if that fails uses libc getifaddrs.
+/// Tries to parse as Ipv4Addr first; if that fails, walks getifaddrs
+/// to find an AF_INET address for the named interface.
 fn resolve_iface_to_ipv4(iface: &str) -> Result<Ipv4Addr, ZmqError> {
-  // Try parsing as IP address first
+  use std::ffi::CString;
+
   if let Ok(addr) = iface.parse::<Ipv4Addr>() {
     return Ok(addr);
   }
 
-  // Otherwise use UNSPECIFIED (let OS choose)
-  // A full implementation would use getifaddrs to find the interface
-  // For now, this is a simple fallback
-  Ok(Ipv4Addr::UNSPECIFIED)
+  let c_iface = CString::new(iface)
+    .map_err(|_| ZmqError::InvalidEndpoint(format!("Invalid interface name: {}", iface)))?;
+
+  let mut ifaddrs: *mut libc::ifaddrs = std::ptr::null_mut();
+  if unsafe { libc::getifaddrs(&mut ifaddrs) } != 0 {
+    return Err(ZmqError::InvalidEndpoint("getifaddrs failed".to_string()));
+  }
+
+  let mut result = None;
+  let mut cursor = ifaddrs;
+  while !cursor.is_null() {
+    let entry = unsafe { &*cursor };
+    let name = unsafe { std::ffi::CStr::from_ptr(entry.ifa_name) };
+    if name == c_iface.as_c_str() {
+      if !entry.ifa_addr.is_null() {
+        let sa = unsafe { &*entry.ifa_addr };
+        if sa.sa_family == libc::AF_INET as libc::sa_family_t {
+          let sin = entry.ifa_addr as *const libc::sockaddr_in;
+          let bytes = unsafe { (*sin).sin_addr.s_addr }.to_ne_bytes();
+          result = Some(Ipv4Addr::from(bytes));
+          break;
+        }
+      }
+    }
+    cursor = entry.ifa_next;
+  }
+
+  unsafe { libc::freeifaddrs(ifaddrs) };
+
+  result.ok_or_else(|| {
+    ZmqError::InvalidEndpoint(format!(
+      "Interface '{}' not found or has no IPv4 address",
+      iface
+    ))
+  })
 }
 
 /// Resolve an interface name to its OS interface index for IPv6 multicast.

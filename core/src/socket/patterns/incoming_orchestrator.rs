@@ -84,7 +84,7 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
               pipe_id = pipe_read_id_for_logging,
               "Orchestrator try_push item to main queue failed: Closed."
             );
-            Err(ZmqError::Internal("Main incoming queue closed".into()))
+            Err(ZmqError::Shutdown)
           }
         }
       }
@@ -106,9 +106,9 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
 
     match push_result {
       Ok(()) => Ok(()),
-      Err(ZmqError::Internal(ref msg)) if msg.contains("FairQueue channel closed") => Err(
-        ZmqError::Internal("Main incoming queue channel unexpectedly closed".into()),
-      ),
+      Err(ZmqError::Internal(ref msg)) if msg.contains("FairQueue channel closed") => {
+        Err(ZmqError::Shutdown)
+      }
       Err(e) => {
         tracing::error!(handle = self.socket_core_handle, pipe_id = pipe_read_id_for_logging, error = %e, "Orchestrator: Unexpected error pushing item.");
         Err(e)
@@ -125,9 +125,7 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
     match rcvtimeo_opt {
       Some(duration) if !duration.is_zero() => match tokio_timeout(duration, pop_future).await {
         Ok(Ok(Some(item))) => Ok(item),
-        Ok(Ok(None)) => Err(ZmqError::Internal(
-          "Orchestrator: Main receive queue closed while popping item".into(),
-        )),
+        Ok(Ok(None)) => Err(ZmqError::Shutdown),
         Ok(Err(e)) => Err(e),
         Err(_timeout_elapsed) => Err(ZmqError::Timeout),
       },
@@ -142,9 +140,7 @@ impl<QItem: Send + 'static> IncomingMessageOrchestrator<QItem> {
           // Infinite wait
           match pop_future.await? {
             Some(item) => Ok(item),
-            None => Err(ZmqError::Internal(
-              "Orchestrator: Main receive queue closed (inf wait)".into(),
-            )),
+            None => Err(ZmqError::Shutdown),
           }
         }
       }

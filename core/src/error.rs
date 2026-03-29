@@ -146,6 +146,13 @@ pub enum ZmqError {
   #[error("Feature not supported or enabled: {0}")]
   UnsupportedFeature(&'static str),
 
+  // --- Shutdown ---
+  /// The socket or transport is shutting down; the receive queue is closed.
+  /// Used to signal actors that they should exit cleanly rather than treat this as a
+  /// transient error.
+  #[error("Socket is shutting down")]
+  Shutdown,
+
   // --- Internal Errors (indicating bugs or unexpected conditions within rzmq) ---
   /// A generic internal error within the rzmq library.
   /// This usually indicates a logic error or an unexpected state that should not occur.
