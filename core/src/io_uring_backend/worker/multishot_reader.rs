@@ -1,6 +1,5 @@
 #![cfg(feature = "io-uring")]
 
-use crate::ZmqError;
 use crate::io_uring_backend::buffer_manager::BufferRingManager;
 use crate::io_uring_backend::connection_handler::{
   HandlerIoOps, HandlerSqeBlueprint, UringConnectionHandler, UringWorkerInterface,

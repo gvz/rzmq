@@ -14,10 +14,6 @@ use rzmq::{
     SNDHWM,
     SNDTIMEO, // Added SNDTIMEO for PUSH consistency
   },
-  socket::SocketEvent, // For monitor events if we add them later
-  Msg,
-  SocketType,
-  ZmqError,
 };
 use serial_test::serial;
 use std::time::Duration; // To run tests serially as they might use fixed ports
