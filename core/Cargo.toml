@@ -139,6 +139,21 @@ name = "iouring_dealrtr_multitask"
 path = "examples/iouring_dealrtr_multitask.rs"
 required-features = ["io-uring"]
 
+[[example]]
+name = "udp_radio_ipv6"
+path = "examples/udp_radio_ipv6.rs"
+required-features = ["udp"]
+
+[[example]]
+name = "udp_dish_ipv6"
+path = "examples/udp_dish_ipv6.rs"
+required-features = ["udp"]
+
+[[example]]
+name = "udp_radio_dish_ipv6"
+path = "examples/udp_radio_dish_ipv6.rs"
+required-features = ["udp"]
+
 [[test]]
 name = "inproc_minimal"
 required-features = ["inproc"]
